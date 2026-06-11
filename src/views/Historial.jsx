@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
 import { cargarReportes, borrarReporte, importarReportes } from '../lib/storage.js';
+import { nubeConfigurada, cargarReportesNube, subirPendientes } from '../lib/nube.js';
 import { ringsPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
@@ -16,8 +17,33 @@ export default function Historial() {
   const fileRef = useRef(null);
 
   const [reportes, setReportes] = useState(cargarReportes());
+  const [nube, setNube] = useState([]);
+  const [cargandoNube, setCargandoNube] = useState(false);
   const [seleccion, setSeleccion] = useState(null); // reportes a dibujar en el mapa
   const [aviso, setAviso] = useState('');
+
+  // Al abrir: sube lo que haya quedado pendiente y baja lo de la nube.
+  useEffect(() => {
+    if (!nubeConfigurada()) return;
+    subirPendientes().then(() => refrescarNube());
+  }, []);
+
+  async function refrescarNube() {
+    setCargandoNube(true);
+    try {
+      setNube(await cargarReportesNube());
+    } catch (e) {
+      setAviso('No se pudo leer la nube (' + e.message + '). Revisa tu internet.');
+    }
+    setCargandoNube(false);
+  }
+
+  // Combina nube + locales sin duplicar (mismo fecha+equipo+colonia).
+  const firma = (r) => `${r.fecha}|${r.equipo}|${r.colonia}`;
+  const enNube = new Set(nube.map(firma));
+  const todos = [...nube, ...reportes.filter((r) => !enNube.has(firma(r)))].sort(
+    (a, b) => new Date(b.fecha) - new Date(a.fecha)
+  );
 
   function borrar(id) {
     if (!window.confirm('¿Borrar este reporte?')) return;
@@ -27,7 +53,7 @@ export default function Historial() {
   }
 
   function exportar() {
-    const blob = new Blob([JSON.stringify(reportes, null, 2)], {
+    const blob = new Blob([JSON.stringify(todos, null, 2)], {
       type: 'application/json'
     });
     const a = document.createElement('a');
@@ -116,14 +142,14 @@ export default function Historial() {
     })();
   }, [map, seleccion]);
 
-  const conTrayectoria = reportes.filter(
+  const conTrayectoria = todos.filter(
     (r) => (r.recorridoReal || []).length > 1
   );
 
   // Totales acumulados (compatible con reportes viejos que usaban "materiales").
   let kmTotal = 0;
   let entregadoTotal = 0;
-  for (const r of reportes) {
+  for (const r of todos) {
     kmTotal += r.km || 0;
     if (r.entregados != null) entregadoTotal += r.entregados;
     else if (r.materiales) {
@@ -138,8 +164,17 @@ export default function Historial() {
         <h2>Historial de recorridos</h2>
 
         <div className="fila">
-          <button className="boton primario mini" onClick={() => fileRef.current.click()}>
-            📥 Importar recorridos
+          {nubeConfigurada() && (
+            <button
+              className="boton primario mini"
+              onClick={refrescarNube}
+              disabled={cargandoNube}
+            >
+              {cargandoNube ? '☁️ Cargando…' : '🔄 Actualizar'}
+            </button>
+          )}
+          <button className="boton suave mini" onClick={() => fileRef.current.click()}>
+            📥 Importar
           </button>
           <button
             className="boton suave mini"
@@ -148,7 +183,7 @@ export default function Historial() {
           >
             🗺️ Ver todas las trayectorias
           </button>
-          {reportes.length > 0 && (
+          {todos.length > 0 && (
             <button className="boton suave mini" onClick={exportar}>
               ⬇️ Exportar todo
             </button>
@@ -165,11 +200,11 @@ export default function Historial() {
 
         {aviso && <div className="aviso">{aviso}</div>}
 
-        {reportes.length === 0 ? (
+        {todos.length === 0 ? (
           <div className="aviso">
             Aún no hay reportes. Cuando un brigadista termine su recorrido aparecerá
-            aquí; también puedes <strong>importar</strong> los archivos que los
-            brigadistas te manden por WhatsApp para ver sus trayectorias en el mapa.
+            aquí{nubeConfigurada() ? ' automáticamente' : ''}; también puedes{' '}
+            <strong>importar</strong> archivos que te manden por WhatsApp.
           </div>
         ) : (
           <>
@@ -185,7 +220,7 @@ export default function Historial() {
                 </tr>
               </thead>
               <tbody>
-                {reportes.map((r) => (
+                {todos.map((r) => (
                   <tr key={r.id}>
                     <td>{new Date(r.fecha).toLocaleDateString('es-MX')}</td>
                     <td>{r.colonia}</td>
@@ -213,9 +248,11 @@ export default function Historial() {
                       >
                         Ver
                       </button>{' '}
-                      <button className="boton peligro mini" onClick={() => borrar(r.id)}>
-                        ✕
-                      </button>
+                      {!r.delaNube && (
+                        <button className="boton peligro mini" onClick={() => borrar(r.id)}>
+                          ✕
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -224,7 +261,7 @@ export default function Historial() {
 
             <h3>Acumulado</h3>
             <p style={{ fontSize: '0.9rem' }}>
-              {reportes.length} recorridos · {kmTotal.toFixed(1)} km asignados ·{' '}
+              {todos.length} recorridos · {kmTotal.toFixed(1)} km asignados ·{' '}
               {entregadoTotal} objetos entregados
             </p>
             {seleccion && seleccion.length === 1 && (

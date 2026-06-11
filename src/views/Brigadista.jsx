@@ -13,6 +13,12 @@ import {
   guardarProgreso,
   limpiarProgreso
 } from '../lib/storage.js';
+import {
+  nubeConfigurada,
+  subirReporte,
+  encolarPendiente,
+  subirPendientes
+} from '../lib/nube.js';
 
 // Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
 const RADIO_CUBIERTO_M = 30;
@@ -78,11 +84,15 @@ export default function Brigadista({ params }) {
   const [notas, setNotas] = useState('');
   const [resumen, setResumen] = useState('');
   const [reporteFinal, setReporteFinal] = useState(null);
+  // '' | 'subiendo' | 'ok' | 'pendiente' — estado del envío a la nube
+  const [estadoNube, setEstadoNube] = useState('');
 
   const color = TEAM_COLORS[(params.equipo - 1) % TEAM_COLORS.length];
 
   // --- carga inicial: recalcula la misma división que vio el coordinador ---
   useEffect(() => {
+    // Si quedó algún reporte sin subir (terminó sin señal), se reintenta ahora.
+    subirPendientes();
     (async () => {
       try {
         let rings;
@@ -266,6 +276,19 @@ export default function Brigadista({ params }) {
     guardarReporte(reporte);
     limpiarProgreso(claveRuta);
 
+    // Sube el reporte a la nube; sin señal, queda en cola y se reintenta solo.
+    if (nubeConfigurada()) {
+      setEstadoNube('subiendo');
+      subirReporte(reporte).then((ok) => {
+        if (ok) {
+          setEstadoNube('ok');
+        } else {
+          encolarPendiente(reporte);
+          setEstadoNube('pendiente');
+        }
+      });
+    }
+
     const texto =
       `🗺️ GeoBrigada – Reporte de recorrido\n` +
       `Colonia: ${params.nombre}\n` +
@@ -418,6 +441,24 @@ export default function Brigadista({ params }) {
           {fase === 'terminado' && (
             <>
               <h2>✅ ¡Recorrido registrado!</h2>
+
+              {estadoNube === 'subiendo' && (
+                <div className="aviso">☁️ Enviando tu recorrido al coordinador…</div>
+              )}
+              {estadoNube === 'ok' && (
+                <div className="aviso" style={{ background: '#f0f6ee', borderColor: '#cde3c8' }}>
+                  ☁️ ¡Listo! Tu recorrido y tu reporte ya le llegaron al coordinador
+                  automáticamente. No tienes que hacer nada más.
+                </div>
+              )}
+              {estadoNube === 'pendiente' && (
+                <div className="aviso">
+                  📶 Ahora mismo no hay señal: tu recorrido se enviará solo en cuanto
+                  el teléfono recupere internet (puedes cerrar la página; al volver a
+                  abrir tu link se envía).
+                </div>
+              )}
+
               <div className="resumen-final">{resumen}</div>
               <div className="fila" style={{ marginTop: 10 }}>
                 <button className="boton suave" onClick={copiarResumen}>
@@ -432,16 +473,20 @@ export default function Brigadista({ params }) {
                   Enviar por WhatsApp
                 </button>
               </div>
-              <div className="fila">
-                <button className="boton primario" onClick={compartirArchivo}>
-                  📤 Enviar mi trayectoria al coordinador
-                </button>
-              </div>
-              <div className="aviso" style={{ marginTop: 10 }}>
-                El botón azul comparte un archivo con tu recorrido GPS. Mándaselo al
-                coordinador (por WhatsApp): él lo importa en la pestaña Historial y ve
-                en el mapa por dónde caminó cada equipo.
-              </div>
+              {estadoNube !== 'ok' && estadoNube !== 'subiendo' && (
+                <>
+                  <div className="fila">
+                    <button className="boton primario" onClick={compartirArchivo}>
+                      📤 Enviar mi trayectoria al coordinador
+                    </button>
+                  </div>
+                  <div className="aviso" style={{ marginTop: 10 }}>
+                    El botón azul comparte un archivo con tu recorrido GPS. Mándaselo al
+                    coordinador (por WhatsApp): él lo importa en la pestaña Historial y ve
+                    en el mapa por dónde caminó cada equipo.
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
