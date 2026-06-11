@@ -8,8 +8,11 @@
 // La "anon key" es pública por diseño (va en el navegador); lo que puede
 // hacer está limitado por las políticas de la tabla (ver scripts/esquema-supabase.sql).
 
-const SUPABASE_URL = '';
-const SUPABASE_KEY = '';
+const SUPABASE_URL = 'https://pxhiafunsxkdmcplwhul.supabase.co';
+const SUPABASE_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
+  'eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4aGlhZnVuc3hrZG1jcGx3aHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNDgxNTAsImV4cCI6MjA5NjcyNDE1MH0.' +
+  'jl7qlsobopVgg7HBFvWjSnQ8FexBEkbK6wjvku2_zxw';
 
 const KEY_PENDIENTES = 'geobrigada_nube_pendientes';
 
