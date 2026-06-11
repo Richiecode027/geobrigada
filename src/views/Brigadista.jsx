@@ -5,7 +5,7 @@ import { ringsPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, orderRoute, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
-import { ringsBounds, haversine } from '../lib/geo.js';
+import { ringsBounds, haversine, partirTrayectoria } from '../lib/geo.js';
 import { decodificarPoly } from '../lib/links.js';
 import {
   guardarReporte,
@@ -65,6 +65,7 @@ export default function Brigadista({ params }) {
   const capaTrack = useRef(null);
   const watchId = useRef(null);
   const track = useRef([]);
+  const wakeLock = useRef(null);
   const rutaRef = useRef(null);
   // cubierto[i][j] = 1 si el GPS ya pasó cerca del punto j del tramo i.
   const cubierto = useRef([]);
@@ -161,17 +162,52 @@ export default function Brigadista({ params }) {
     if (encuentro) marcadorEncuentro(encuentro).addTo(g);
     capaRuta.current = g;
     // Recorrido previo restaurado (si recargó la página a media caminata).
-    if (track.current.length > 1) {
-      if (capaTrack.current) capaTrack.current.remove();
-      capaTrack.current = L.polyline(track.current, {
-        color: '#222',
-        weight: 2,
-        dashArray: '4 5'
-      }).addTo(map);
-    }
+    dibujarTrack();
     const todos = miRuta.flatMap((u) => u.coords);
     map.fitBounds(ringsBounds([todos]), { padding: [20, 20] });
   }, [map, miRuta]);
+
+  // Dibuja el rastro real partido en segmentos: donde hubo un hueco grande
+  // (teléfono bloqueado) no se pinta línea recta falsa.
+  function dibujarTrack() {
+    if (!map) return;
+    if (capaTrack.current) capaTrack.current.remove();
+    const segs = partirTrayectoria(track.current);
+    if (segs.length === 0) return;
+    const g = L.layerGroup().addTo(map);
+    segs.forEach((s) =>
+      L.polyline(s, { color: '#222', weight: 2, dashArray: '4 5' }).addTo(g)
+    );
+    capaTrack.current = g;
+  }
+
+  // Mientras el GPS está activo, se le pide al teléfono no apagar la pantalla:
+  // con la pantalla bloqueada el navegador congela la página y se pierde el rastro.
+  useEffect(() => {
+    if (!gpsActivo) return;
+    async function pedirPantallaActiva() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock.current = await navigator.wakeLock.request('screen');
+        }
+      } catch {
+        /* batería baja o navegador sin soporte: la app sigue normal */
+      }
+    }
+    pedirPantallaActiva();
+    // Si el usuario bloqueó de todos modos, al volver se vuelve a pedir.
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') pedirPantallaActiva();
+    };
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      document.removeEventListener('visibilitychange', alVolver);
+      if (wakeLock.current) {
+        wakeLock.current.release().catch(() => {});
+        wakeLock.current = null;
+      }
+    };
+  }, [gpsActivo]);
 
   // --- GPS ----------------------------------------------------------------
   function activarGPS() {
@@ -217,14 +253,7 @@ export default function Brigadista({ params }) {
         L.circle(p, { radius: pos.coords.accuracy, color: '#1d6fd1', weight: 1, fillOpacity: 0.1 }).addTo(g);
         L.circleMarker(p, { radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1 }).addTo(g);
         capaGps.current = g;
-        if (capaTrack.current) capaTrack.current.remove();
-        if (track.current.length > 1) {
-          capaTrack.current = L.polyline(track.current, {
-            color: '#222',
-            weight: 2,
-            dashArray: '4 5'
-          }).addTo(map);
-        }
+        if (seMovio) dibujarTrack();
       },
       (err) => {
         setGpsError(
@@ -259,6 +288,13 @@ export default function Brigadista({ params }) {
 
   // --- cierre ---------------------------------------------------------------
   function terminarRecorrido() {
+    // Se apaga el GPS y se libera la pantalla: el recorrido ya terminó.
+    if (watchId.current !== null) {
+      navigator.geolocation.clearWatch(watchId.current);
+      watchId.current = null;
+    }
+    setGpsActivo(false);
+
     const n = parseInt(entregados, 10) || 0;
     const reporte = {
       fecha: new Date().toISOString(),
@@ -370,6 +406,13 @@ export default function Brigadista({ params }) {
                 </span>
               </div>
               {gpsError && <div className="error">{gpsError}</div>}
+              {gpsActivo && (
+                <p className="nota">
+                  🔆 La pantalla se mantendrá encendida mientras recorres, para no
+                  perder tu rastro. <strong>No bloquees el teléfono</strong>: si lo
+                  bloqueas, el GPS se pausa hasta que lo desbloquees.
+                </p>
+              )}
 
               <h3>Porcentaje de la ruta recorrido</h3>
               <div className="fila" style={{ alignItems: 'center' }}>

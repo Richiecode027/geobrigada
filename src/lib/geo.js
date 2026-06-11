@@ -103,6 +103,24 @@ export function geojsonToRings(gj) {
   return [];
 }
 
+// Parte una trayectoria GPS en segmentos donde hay huecos grandes (teléfono
+// bloqueado, sin señal GPS): así no se pintan líneas rectas falsas.
+export function partirTrayectoria(track, gapMetros = 100) {
+  if (!track || track.length < 2) return [];
+  const segs = [];
+  let cur = [track[0]];
+  for (let i = 1; i < track.length; i++) {
+    if (haversine(track[i - 1], track[i]) > gapMetros) {
+      if (cur.length > 1) segs.push(cur);
+      cur = [track[i]];
+    } else {
+      cur.push(track[i]);
+    }
+  }
+  if (cur.length > 1) segs.push(cur);
+  return segs;
+}
+
 export function ringsBounds(rings) {
   let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
   for (const r of rings) {

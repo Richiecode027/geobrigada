@@ -8,7 +8,7 @@ import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, TEAM_COLORS } from '../lib/partition.js';
 import { decodificarPoly } from '../lib/links.js';
-import { ringsBounds } from '../lib/geo.js';
+import { ringsBounds, partirTrayectoria } from '../lib/geo.js';
 
 export default function Historial() {
   const mapaRef = useRef(null);
@@ -125,7 +125,18 @@ export default function Historial() {
         const t = r.recorridoReal || [];
         if (t.length < 2) continue;
         const color = TEAM_COLORS[((r.equipo || 1) - 1) % TEAM_COLORS.length];
-        L.polyline(t, { color, weight: 4, opacity: 0.9 }).addTo(g);
+        // Trazo partido donde hubo huecos de GPS (teléfono bloqueado): el
+        // hueco se une con puntitos, no con una línea recta falsa.
+        const segs = partirTrayectoria(t);
+        segs.forEach((s, i) => {
+          L.polyline(s, { color, weight: 4, opacity: 0.9 }).addTo(g);
+          if (i > 0) {
+            const fin = segs[i - 1][segs[i - 1].length - 1];
+            L.polyline([fin, s[0]], {
+              color, weight: 2, opacity: 0.5, dashArray: '2 8'
+            }).addTo(g);
+          }
+        });
         // inicio (relleno) y fin (anillo) de la caminata
         L.circleMarker(t[0], {
           radius: 7, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1
