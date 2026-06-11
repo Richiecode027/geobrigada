@@ -345,7 +345,15 @@ export default function Brigadista({ params }) {
       <div className="contenido">
         <div className="mapa" ref={mapaRef} />
         <div className="panel">
-          {fase === 'cargando' && <p>Cargando tu ruta…</p>}
+          {fase === 'cargando' && (
+            <>
+              <p>Cargando tu ruta…</p>
+              <p className="nota">
+                La primera vez se descargan las calles de tu colonia; puede tardar
+                hasta un minuto. Después queda guardado en tu teléfono.
+              </p>
+            </>
+          )}
           {fase === 'error' && <div className="error">{error}</div>}
 
           {(fase === 'listo' || fase === 'formulario') && miRuta && (

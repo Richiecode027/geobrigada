@@ -306,6 +306,13 @@ export default function Coordinador() {
                 {cargando ? 'Calculando rutas…' : 'Generar rutas'}
               </button>
             </div>
+            {cargando && (
+              <div className="aviso">
+                ⏳ Descargando las calles de OpenStreetMap… La primera vez puede
+                tardar hasta un minuto si sus servidores están ocupados. Las
+                siguientes veces es instantáneo.
+              </div>
+            )}
           </>
         )}
 

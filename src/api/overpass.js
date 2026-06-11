@@ -15,6 +15,20 @@ const ENDPOINTS = [
   'https://overpass.private.coffee/api/interpreter'
 ];
 
+// Si un espejo se cuelga sin responder, se corta a los 25 s y se pasa al
+// siguiente; sin esto la app se queda "calculando rutas" para siempre.
+const ESPERA_MS = 25000;
+
+async function fetchConLimite(url, opts) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ESPERA_MS);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 // Caché local de calles por colonia (7 días): regenerar rutas con otro número
 // de equipos es instantáneo y no se satura a los servidores de OpenStreetMap.
 const CACHE_PREFIJO = 'geobrigada_calles_';
@@ -63,7 +77,7 @@ export async function obtenerCalles(rings) {
   const m = 0.001; // ~100 m de margen
   const bbox = `${(s - m).toFixed(6)},${(w - m).toFixed(6)},${(n + m).toFixed(6)},${(e + m).toFixed(6)}`;
   const query =
-    `[out:json][timeout:90];` +
+    `[out:json][timeout:50];` +
     `way["highway"~"${HIGHWAY_REGEX}"]["service"!~"${SERVICE_EXCLUIR}"](${bbox});` +
     `out geom;`;
 
@@ -72,9 +86,11 @@ export async function obtenerCalles(rings) {
   if (enCache) return enCache;
 
   let lastErr = null;
-  for (const endpoint of ENDPOINTS) {
+  // Dos vueltas a la lista de espejos: si todos fallan a la primera (suele
+  // ser saturación pasajera), se reintenta una vez más antes de rendirse.
+  for (const endpoint of [...ENDPOINTS, ...ENDPOINTS]) {
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetchConLimite(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'data=' + encodeURIComponent(query)
