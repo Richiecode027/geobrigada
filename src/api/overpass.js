@@ -1,6 +1,6 @@
 // Obtiene de Overpass (OpenStreetMap) todas las calles dentro de la colonia.
 
-import { simplifyRing } from '../lib/geo.js';
+import { ringsBounds } from '../lib/geo.js';
 
 // Tipos de vialidad que un brigadista recorre a pie repartiendo material.
 // Incluye privadas/callejones (service) y andadores (footway), pero excluye
@@ -55,15 +55,17 @@ function guardarCache(clave, ways) {
 }
 
 export async function obtenerCalles(rings) {
-  const clauses = rings
-    .map((r) => {
-      const poly = simplifyRing(r, 12)
-        .map((p) => p[0].toFixed(6) + ' ' + p[1].toFixed(6))
-        .join(' ');
-      return `way["highway"~"${HIGHWAY_REGEX}"]["service"!~"${SERVICE_EXCLUIR}"](poly:"${poly}");`;
-    })
-    .join('\n');
-  const query = `[out:json][timeout:90];(${clauses});out geom;`;
+  // Se pide por caja envolvente (con margen) en lugar de por polígono:
+  // Overpass solo regresa calles con NODOS dentro del polígono, y eso
+  // pierde calles que cruzan la colonia o corren sobre su límite.
+  // El recorte fino punto por punto lo hace la app localmente (units.js).
+  const [[s, w], [n, e]] = ringsBounds(rings);
+  const m = 0.001; // ~100 m de margen
+  const bbox = `${(s - m).toFixed(6)},${(w - m).toFixed(6)},${(n + m).toFixed(6)},${(e + m).toFixed(6)}`;
+  const query =
+    `[out:json][timeout:90];` +
+    `way["highway"~"${HIGHWAY_REGEX}"]["service"!~"${SERVICE_EXCLUIR}"](${bbox});` +
+    `out geom;`;
 
   const clave = claveCache(query);
   const enCache = leerCache(clave);

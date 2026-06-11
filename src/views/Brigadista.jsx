@@ -14,7 +14,8 @@ import {
   limpiarProgreso
 } from '../lib/storage.js';
 
-const MATERIALES = ['Folletos', 'Calendarios', 'Lonas', 'Flores', 'Otros'];
+// Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
+const RADIO_CUBIERTO_M = 30;
 
 function hashSimple(s) {
   let h = 0;
@@ -23,17 +24,31 @@ function hashSimple(s) {
 }
 
 // Agrupa tramos consecutivos de la ruta por nombre de calle para la lista.
+// Guarda los índices de los tramos para calcular el avance por calle.
 function agruparCalles(ruta) {
   const grupos = [];
-  for (const u of ruta) {
+  ruta.forEach((u, i) => {
     const ultimo = grupos[grupos.length - 1];
     if (ultimo && ultimo.nombre === u.name) {
       ultimo.metros += u.length;
+      ultimo.idx.push(i);
     } else {
-      grupos.push({ nombre: u.name, metros: u.length });
+      grupos.push({ nombre: u.name, metros: u.length, idx: [i] });
     }
-  }
+  });
   return grupos;
+}
+
+// % de la ruta cubierto: metros con GPS encima / metros totales.
+function calcularPct(ruta, cubierto) {
+  let total = 0;
+  let hecho = 0;
+  ruta.forEach((u, i) => {
+    total += u.length;
+    const c = cubierto[i];
+    hecho += (u.length * c.reduce((s, v) => s + v, 0)) / c.length;
+  });
+  return total ? Math.round((100 * hecho) / total) : 0;
 }
 
 export default function Brigadista({ params }) {
@@ -44,6 +59,9 @@ export default function Brigadista({ params }) {
   const capaTrack = useRef(null);
   const watchId = useRef(null);
   const track = useRef([]);
+  const rutaRef = useRef(null);
+  // cubierto[i][j] = 1 si el GPS ya pasó cerca del punto j del tramo i.
+  const cubierto = useRef([]);
 
   const claveRuta = `${params.col || 'poly' + hashSimple(params.poly || '')}_${params.nEquipos}_${params.equipo}`;
 
@@ -53,14 +71,13 @@ export default function Brigadista({ params }) {
   const [otras, setOtras] = useState([]);
   const [encuentro, setEncuentro] = useState(null);
   const [calles, setCalles] = useState([]);
-  const [hechas, setHechas] = useState({});
+  const [pct, setPct] = useState(0);
   const [gpsActivo, setGpsActivo] = useState(false);
   const [gpsError, setGpsError] = useState('');
-  const [materiales, setMateriales] = useState(
-    Object.fromEntries(MATERIALES.map((m) => [m, '']))
-  );
+  const [entregados, setEntregados] = useState('');
   const [notas, setNotas] = useState('');
   const [resumen, setResumen] = useState('');
+  const [reporteFinal, setReporteFinal] = useState(null);
 
   const color = TEAM_COLORS[(params.equipo - 1) % TEAM_COLORS.length];
 
@@ -87,11 +104,23 @@ export default function Brigadista({ params }) {
         }
         const rutas = grupos.map((g) => orderRoute(g, inicio));
         const mia = rutas[params.equipo - 1];
+        rutaRef.current = mia;
+
+        // Restaura el avance guardado (sobrevive si se recarga la página).
+        const prog = cargarProgreso(claveRuta);
+        if (Array.isArray(prog.track)) track.current = prog.track;
+        cubierto.current = mia.map((u, ui) => {
+          const c = Array.isArray(prog.cubierto) ? prog.cubierto[ui] : null;
+          return Array.isArray(c) && c.length === u.coords.length
+            ? c
+            : new Array(u.coords.length).fill(0);
+        });
+
         setEncuentro(inicio);
         setMiRuta(mia);
         setOtras(rutas.filter((_, i) => i !== params.equipo - 1));
         setCalles(agruparCalles(mia));
-        setHechas(cargarProgreso(claveRuta));
+        setPct(calcularPct(mia, cubierto.current));
         setFase('listo');
       } catch (err) {
         setError(err.message);
@@ -111,15 +140,25 @@ export default function Brigadista({ params }) {
     // Rutas de los otros equipos, tenues, para referencia.
     otras.forEach((r) =>
       r.forEach((u) =>
-        L.polyline(u.coords, { color: '#999', weight: 2, opacity: 0.4 }).addTo(g)
+        L.polyline(u.coords, { color: '#999', weight: 2, opacity: 0.35 }).addTo(g)
       )
     );
+    // Semitransparente para que el nombre de la calle se lea debajo.
     miRuta.forEach((u) =>
-      L.polyline(u.coords, { color, weight: 5, opacity: 0.9 }).addTo(g)
+      L.polyline(u.coords, { color, weight: 6, opacity: 0.5 }).addTo(g)
     );
     marcadorInicio(miRuta[0].coords[0], params.equipo, color).addTo(g);
     if (encuentro) marcadorEncuentro(encuentro).addTo(g);
     capaRuta.current = g;
+    // Recorrido previo restaurado (si recargó la página a media caminata).
+    if (track.current.length > 1) {
+      if (capaTrack.current) capaTrack.current.remove();
+      capaTrack.current = L.polyline(track.current, {
+        color: '#222',
+        weight: 2,
+        dashArray: '4 5'
+      }).addTo(map);
+    }
     const todos = miRuta.flatMap((u) => u.coords);
     map.fitBounds(ringsBounds([todos]), { padding: [20, 20] });
   }, [map, miRuta]);
@@ -135,9 +174,33 @@ export default function Brigadista({ params }) {
       (pos) => {
         const p = [pos.coords.latitude, pos.coords.longitude];
         setGpsActivo(true);
+
         // guarda el recorrido real (un punto cada ~15 m)
         const ultimo = track.current[track.current.length - 1];
-        if (!ultimo || haversine(ultimo, p) > 15) track.current.push(p);
+        const seMovio = !ultimo || haversine(ultimo, p) > 15;
+        if (seMovio) track.current.push(p);
+
+        // marca como recorridos los puntos de la ruta cercanos al GPS
+        let cambio = false;
+        if (rutaRef.current) {
+          rutaRef.current.forEach((u, ui) => {
+            const c = cubierto.current[ui];
+            for (let j = 0; j < u.coords.length; j++) {
+              if (!c[j] && haversine(p, u.coords[j]) < RADIO_CUBIERTO_M) {
+                c[j] = 1;
+                cambio = true;
+              }
+            }
+          });
+        }
+        if (cambio) setPct(calcularPct(rutaRef.current, cubierto.current));
+        if (cambio || seMovio) {
+          guardarProgreso(claveRuta, {
+            track: track.current,
+            cubierto: cubierto.current
+          });
+        }
+
         if (!map) return;
         if (capaGps.current) capaGps.current.remove();
         const g = L.layerGroup().addTo(map);
@@ -170,47 +233,49 @@ export default function Brigadista({ params }) {
     if (ultimo && map) map.setView(ultimo, 17);
   }
 
-  // --- progreso y cierre ---------------------------------------------------
-  function marcarCalle(i) {
-    const nuevo = { ...hechas, [i]: !hechas[i] };
-    setHechas(nuevo);
-    guardarProgreso(claveRuta, nuevo);
+  // --- avance por calle (automático, según el GPS) -------------------------
+  function pctCalle(grupo) {
+    if (!rutaRef.current || !grupo.metros) return 0;
+    let m = 0;
+    for (const ui of grupo.idx) {
+      const u = rutaRef.current[ui];
+      const c = cubierto.current[ui];
+      m += (u.length * c.reduce((s, v) => s + v, 0)) / c.length;
+    }
+    return (100 * m) / grupo.metros;
   }
 
   const totalKm = miRuta ? miRuta.reduce((s, u) => s + u.length, 0) / 1000 : 0;
-  const nHechas = calles.filter((_, i) => hechas[i]).length;
 
+  // --- cierre ---------------------------------------------------------------
   function terminarRecorrido() {
-    const mat = {};
-    for (const m of MATERIALES) {
-      const v = parseInt(materiales[m], 10);
-      if (v > 0) mat[m] = v;
-    }
+    const n = parseInt(entregados, 10) || 0;
     const reporte = {
       fecha: new Date().toISOString(),
       colonia: params.nombre,
+      col: params.col || null,
+      poly: params.poly || null,
       equipo: params.equipo,
       nEquipos: params.nEquipos,
       km: Math.round(totalKm * 10) / 10,
-      callesTotal: calles.length,
-      callesHechas: nHechas,
-      materiales: mat,
+      porcentaje: pct,
+      entregados: n,
       notas: notas.trim(),
-      recorridoReal: track.current
+      recorridoReal: track.current.map((q) => [+q[0].toFixed(5), +q[1].toFixed(5)])
     };
     guardarReporte(reporte);
     limpiarProgreso(claveRuta);
 
-    const lineasMat = Object.entries(mat).map(([k, v]) => `• ${k}: ${v}`);
     const texto =
       `🗺️ GeoBrigada – Reporte de recorrido\n` +
       `Colonia: ${params.nombre}\n` +
       `Equipo: ${params.equipo} de ${params.nEquipos}\n` +
       `Fecha: ${new Date().toLocaleString('es-MX')}\n` +
-      `Calles cubiertas: ${nHechas}/${calles.length} (${totalKm.toFixed(1)} km asignados)\n` +
-      `Material repartido:\n${lineasMat.length ? lineasMat.join('\n') : '• (sin registrar)'}` +
+      `Ruta recorrida: ${pct}% (${totalKm.toFixed(1)} km asignados)\n` +
+      `Objetos entregados: ${n}` +
       (notas.trim() ? `\nNotas: ${notas.trim()}` : '');
     setResumen(texto);
+    setReporteFinal(reporte);
     setFase('terminado');
   }
 
@@ -220,6 +285,29 @@ export default function Brigadista({ params }) {
     } catch {
       window.prompt('Copia el resumen:', resumen);
     }
+  }
+
+  // Comparte el recorrido como archivo: el coordinador lo importa en la
+  // pestaña Historial y ve la trayectoria de cada equipo en el mapa.
+  async function compartirArchivo() {
+    const json = JSON.stringify(reporteFinal);
+    const nombre = `geobrigada_eq${params.equipo}_${(params.nombre || 'colonia')
+      .replace(/\s+/g, '_')
+      .toLowerCase()}.json`;
+    const file = new File([json], nombre, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Recorrido GeoBrigada' });
+        return;
+      } catch {
+        /* compartir cancelado: cae a la descarga */
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    a.download = nombre;
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   // --- render ---------------------------------------------------------------
@@ -252,26 +340,36 @@ export default function Brigadista({ params }) {
               </div>
               {gpsError && <div className="error">{gpsError}</div>}
 
-              <h3>
-                Tu lista de calles ({nHechas}/{calles.length})
-              </h3>
-              <div className="progreso-barra">
-                <div style={{ width: (calles.length ? (nHechas / calles.length) * 100 : 0) + '%' }} />
+              <h3>Porcentaje de la ruta recorrido</h3>
+              <div className="fila" style={{ alignItems: 'center' }}>
+                <span className="pct-grande" style={{ color }}>
+                  {pct}%
+                </span>
+                <div className="progreso-barra" style={{ flex: 1, margin: 0 }}>
+                  <div style={{ width: pct + '%' }} />
+                </div>
               </div>
+              <p className="nota">
+                Se calcula solo con tu GPS: camina las calles de tu color y el
+                porcentaje sube automáticamente.
+              </p>
+
+              <h3>Tus calles</h3>
               <ul className="lista-calles">
-                {calles.map((c, i) => (
-                  <li key={i}>
-                    <input
-                      type="checkbox"
-                      checked={!!hechas[i]}
-                      onChange={() => marcarCalle(i)}
-                    />
-                    <span className={hechas[i] ? 'hecha' : ''}>
-                      {i + 1}. {c.nombre}
-                    </span>
-                    <span className="km">{(c.metros / 1000).toFixed(2)} km</span>
-                  </li>
-                ))}
+                {calles.map((c, i) => {
+                  const pc = pctCalle(c);
+                  return (
+                    <li key={i}>
+                      <span className={pc >= 70 ? 'hecha' : ''}>
+                        {i + 1}. {c.nombre}
+                      </span>
+                      <span className="km">
+                        {(c.metros / 1000).toFixed(2)} km ·{' '}
+                        {pc >= 70 ? '✓' : Math.round(pc) + '%'}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
 
               {fase === 'listo' && (
@@ -284,22 +382,18 @@ export default function Brigadista({ params }) {
 
               {fase === 'formulario' && (
                 <>
-                  <h3>¿Cuánto material repartiste?</h3>
-                  <div className="form-material">
-                    {MATERIALES.map((m) => (
-                      <React.Fragment key={m}>
-                        <label>{m}</label>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={materiales[m]}
-                          onChange={(e) =>
-                            setMateriales({ ...materiales, [m]: e.target.value })
-                          }
-                        />
-                      </React.Fragment>
-                    ))}
+                  <h3>¿Cuántos objetos entregaste?</h3>
+                  <div className="fila">
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={entregados}
+                      onChange={(e) => setEntregados(e.target.value)}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: '#555' }}>
+                      objetos entregados
+                    </span>
                   </div>
                   <h3>Notas (opcional)</h3>
                   <textarea
@@ -338,9 +432,15 @@ export default function Brigadista({ params }) {
                   Enviar por WhatsApp
                 </button>
               </div>
+              <div className="fila">
+                <button className="boton primario" onClick={compartirArchivo}>
+                  📤 Enviar mi trayectoria al coordinador
+                </button>
+              </div>
               <div className="aviso" style={{ marginTop: 10 }}>
-                Envía el resumen a tu coordinador por WhatsApp. El reporte también quedó
-                guardado en este teléfono (pestaña Historial).
+                El botón azul comparte un archivo con tu recorrido GPS. Mándaselo al
+                coordinador (por WhatsApp): él lo importa en la pestaña Historial y ve
+                en el mapa por dónde caminó cada equipo.
               </div>
             </>
           )}

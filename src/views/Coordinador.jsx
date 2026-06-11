@@ -176,8 +176,9 @@ export default function Coordinador() {
     if (!equipos) return;
     const g = L.layerGroup().addTo(map);
     equipos.forEach((eq, i) => {
+      // Semitransparentes para que los nombres de las calles se lean debajo.
       eq.ruta.forEach((u) =>
-        L.polyline(u.coords, { color: eq.color, weight: 4, opacity: 0.85 }).addTo(g)
+        L.polyline(u.coords, { color: eq.color, weight: 5, opacity: 0.5 }).addTo(g)
       );
       marcadorInicio(eq.ruta[0].coords[0], i + 1, eq.color).addTo(g);
     });
@@ -206,6 +207,18 @@ export default function Coordinador() {
       `Eres el *Equipo ${i + 1}* de ${equipos.length}. ` +
       `Tu ruta mide ${equipos[i].km.toFixed(1)} km.\n` +
       `Ábrela aquí y activa tu GPS:\n${link(i)}`;
+    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+  }
+
+  // Un solo mensaje con TODOS los links, para mandarlo al grupo de la brigada.
+  function compartirTodosWhatsApp() {
+    const lineas = equipos.map(
+      (eq, i) => `*Equipo ${i + 1}* (${eq.km.toFixed(1)} km):\n${link(i)}`
+    );
+    const texto =
+      `🗺️ GeoBrigada – ${colonia.nombre} (${equipos.length} equipos)\n` +
+      `Cada quien abre SOLO el link de su equipo y activa su GPS:\n\n` +
+      lineas.join('\n\n');
     window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
   }
 
@@ -299,6 +312,11 @@ export default function Coordinador() {
         {equipos && (
           <>
             <h2>3. Comparte la ruta a cada equipo</h2>
+            <div className="fila">
+              <button className="boton exito" onClick={compartirTodosWhatsApp}>
+                📲 Enviar TODOS los links al grupo
+              </button>
+            </div>
             {equipos.map((eq, i) => (
               <div key={i} className="tarjeta-equipo" style={{ borderLeftColor: eq.color }}>
                 <strong>Equipo {i + 1}</strong>

@@ -23,6 +23,27 @@ export function borrarReporte(id) {
   localStorage.setItem(KEY_REPORTES, JSON.stringify(todos));
 }
 
+// Importa reportes recibidos de los brigadistas (archivos JSON compartidos
+// por WhatsApp). Ignora los que ya existen (misma fecha+equipo+colonia).
+export function importarReportes(nuevos) {
+  const todos = cargarReportes();
+  const firma = (r) => `${r.fecha}|${r.equipo}|${r.colonia}`;
+  const vistas = new Set(todos.map(firma));
+  let agregados = 0;
+  for (const r of nuevos) {
+    if (!r || !r.fecha || !r.equipo) continue;
+    if (vistas.has(firma(r))) continue;
+    vistas.add(firma(r));
+    todos.unshift({
+      ...r,
+      id: (Date.parse(r.fecha) || Date.now()).toString(36) + '_eq' + r.equipo
+    });
+    agregados++;
+  }
+  localStorage.setItem(KEY_REPORTES, JSON.stringify(todos));
+  return agregados;
+}
+
 // Progreso de la lista de calles del brigadista (sobrevive si recarga la página).
 export function cargarProgreso(claveRuta) {
   try {

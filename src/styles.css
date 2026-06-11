@@ -175,6 +175,15 @@ textarea { resize: vertical; }
 .lista-calles .hecha { text-decoration: line-through; color: #999; }
 .lista-calles .km { margin-left: auto; color: #888; font-size: 0.8rem; white-space: nowrap; }
 
+.pct-grande {
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 86px;
+}
+
+.nota { font-size: 0.8rem; color: #777; margin: 2px 0 10px; }
+
 .progreso-barra {
   height: 10px;
   background: #e6eaef;

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildUnits } from '../src/lib/units.js';
 import { partition, orderRoute, buildAdjacency, puntoDeEncuentro } from '../src/lib/partition.js';
-import { haversine, simplifyRing } from '../src/lib/geo.js';
+import { haversine, ringsBounds } from '../src/lib/geo.js';
 
 const nombreBuscado = (process.argv[2] || 'lomas de las americas').toLowerCase();
 const k = parseInt(process.argv[3] || '2', 10);
@@ -25,15 +25,14 @@ let ways;
 if (fs.existsSync(cacheFile)) {
   ways = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
 } else {
-  const clauses = rings
-    .map((r) => {
-      const poly = simplifyRing(r, 12)
-        .map((p) => p[0].toFixed(6) + ' ' + p[1].toFixed(6))
-        .join(' ');
-      return `way["highway"~"^(primary|secondary|tertiary|residential|living_street|unclassified|pedestrian|service|footway)$"]["service"!~"parking_aisle|driveway|drive-through|emergency_access"](poly:"${poly}");`;
-    })
-    .join('\n');
-  const query = `[out:json][timeout:90];(${clauses});out geom;`;
+  // Misma consulta que la app (src/api/overpass.js): caja envolvente con margen.
+  const [[s, w], [n, e]] = ringsBounds(rings);
+  const m = 0.001;
+  const bbox = `${(s - m).toFixed(6)},${(w - m).toFixed(6)},${(n + m).toFixed(6)},${(e + m).toFixed(6)}`;
+  const query =
+    `[out:json][timeout:90];` +
+    `way["highway"~"^(primary|secondary|tertiary|residential|living_street|unclassified|pedestrian|service|footway)$"]` +
+    `["service"!~"parking_aisle|driveway|drive-through|emergency_access"](${bbox});out geom;`;
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',

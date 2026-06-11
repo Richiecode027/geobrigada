@@ -1,13 +1,29 @@
-import React, { useState } from 'react';
-import { cargarReportes, borrarReporte } from '../lib/storage.js';
+import React, { useEffect, useRef, useState } from 'react';
+import L from 'leaflet';
+import { useMap } from '../components/useMap.js';
+import { cargarReportes, borrarReporte, importarReportes } from '../lib/storage.js';
+import { ringsPorClave } from '../lib/colonias.js';
+import { obtenerCalles } from '../api/overpass.js';
+import { buildUnits } from '../lib/units.js';
+import { partition, TEAM_COLORS } from '../lib/partition.js';
+import { decodificarPoly } from '../lib/links.js';
+import { ringsBounds } from '../lib/geo.js';
 
 export default function Historial() {
+  const mapaRef = useRef(null);
+  const map = useMap(mapaRef);
+  const capa = useRef(null);
+  const fileRef = useRef(null);
+
   const [reportes, setReportes] = useState(cargarReportes());
+  const [seleccion, setSeleccion] = useState(null); // reportes a dibujar en el mapa
+  const [aviso, setAviso] = useState('');
 
   function borrar(id) {
     if (!window.confirm('¿Borrar este reporte?')) return;
     borrarReporte(id);
     setReportes(cargarReportes());
+    setSeleccion(null);
   }
 
   function exportar() {
@@ -21,41 +37,150 @@ export default function Historial() {
     URL.revokeObjectURL(a.href);
   }
 
-  // Totales de material acumulado
-  const totales = {};
+  // Importa los archivos .json que los brigadistas comparten al terminar.
+  async function importar(e) {
+    const files = [...e.target.files];
+    const nuevos = [];
+    for (const f of files) {
+      try {
+        const data = JSON.parse(await f.text());
+        if (Array.isArray(data)) nuevos.push(...data);
+        else nuevos.push(data);
+      } catch {
+        /* archivo que no es un reporte: se ignora */
+      }
+    }
+    const n = importarReportes(nuevos);
+    setReportes(cargarReportes());
+    setAviso(
+      n > 0
+        ? `✅ Se importaron ${n} recorrido(s). Usa "Ver" o "Ver todas" para revisarlos en el mapa.`
+        : 'Esos archivos no traen recorridos nuevos (quizá ya estaban importados).'
+    );
+    e.target.value = '';
+  }
+
+  // --- dibujo en el mapa ----------------------------------------------------
+  useEffect(() => {
+    if (!map) return;
+    if (capa.current) capa.current.remove();
+    if (!seleccion || seleccion.length === 0) return;
+    const g = L.layerGroup().addTo(map);
+    capa.current = g;
+
+    (async () => {
+      const bounds = [];
+
+      // Al ver UN solo equipo se dibuja también su ruta asignada (tenue),
+      // para comparar lo planeado contra lo caminado.
+      if (seleccion.length === 1) {
+        const r = seleccion[0];
+        try {
+          let rings = null;
+          if (r.col) rings = await ringsPorClave(r.col);
+          else if (r.poly) rings = [decodificarPoly(r.poly)];
+          if (rings && r.nEquipos) {
+            const ways = await obtenerCalles(rings);
+            const units = buildUnits(ways, rings);
+            const grupos = partition(units, r.nEquipos);
+            const mia = grupos[r.equipo - 1] || [];
+            const color = TEAM_COLORS[(r.equipo - 1) % TEAM_COLORS.length];
+            mia.forEach((u) => {
+              L.polyline(u.coords, { color, weight: 5, opacity: 0.25 }).addTo(g);
+              bounds.push(...u.coords);
+            });
+          }
+        } catch {
+          /* sin internet o reporte viejo: se muestra solo la trayectoria */
+        }
+      }
+
+      for (const r of seleccion) {
+        const t = r.recorridoReal || [];
+        if (t.length < 2) continue;
+        const color = TEAM_COLORS[((r.equipo || 1) - 1) % TEAM_COLORS.length];
+        L.polyline(t, { color, weight: 4, opacity: 0.9 }).addTo(g);
+        // inicio (relleno) y fin (anillo) de la caminata
+        L.circleMarker(t[0], {
+          radius: 7, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1
+        }).addTo(g);
+        L.circleMarker(t[t.length - 1], {
+          radius: 7, color, weight: 3, fillColor: '#fff', fillOpacity: 1
+        }).addTo(g);
+        bounds.push(...t);
+      }
+
+      if (bounds.length) {
+        map.fitBounds(ringsBounds([bounds]), { padding: [25, 25] });
+      }
+    })();
+  }, [map, seleccion]);
+
+  const conTrayectoria = reportes.filter(
+    (r) => (r.recorridoReal || []).length > 1
+  );
+
+  // Totales acumulados (compatible con reportes viejos que usaban "materiales").
   let kmTotal = 0;
+  let entregadoTotal = 0;
   for (const r of reportes) {
     kmTotal += r.km || 0;
-    for (const [m, v] of Object.entries(r.materiales || {})) {
-      totales[m] = (totales[m] || 0) + v;
+    if (r.entregados != null) entregadoTotal += r.entregados;
+    else if (r.materiales) {
+      entregadoTotal += Object.values(r.materiales).reduce((s, v) => s + v, 0);
     }
   }
 
   return (
     <div className="contenido">
-      <div className="panel" style={{ maxHeight: 'none', flex: 1, width: '100%' }}>
-        <h2>Historial de recorridos (este dispositivo)</h2>
+      <div className="mapa" ref={mapaRef} />
+      <div className="panel">
+        <h2>Historial de recorridos</h2>
+
+        <div className="fila">
+          <button className="boton primario mini" onClick={() => fileRef.current.click()}>
+            📥 Importar recorridos
+          </button>
+          <button
+            className="boton suave mini"
+            onClick={() => setSeleccion(conTrayectoria)}
+            disabled={conTrayectoria.length === 0}
+          >
+            🗺️ Ver todas las trayectorias
+          </button>
+          {reportes.length > 0 && (
+            <button className="boton suave mini" onClick={exportar}>
+              ⬇️ Exportar todo
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            multiple
+            style={{ display: 'none' }}
+            onChange={importar}
+          />
+        </div>
+
+        {aviso && <div className="aviso">{aviso}</div>}
 
         {reportes.length === 0 ? (
           <div className="aviso">
-            Aún no hay reportes guardados. Cuando un brigadista termine su recorrido en este
-            dispositivo, aparecerá aquí.
+            Aún no hay reportes. Cuando un brigadista termine su recorrido aparecerá
+            aquí; también puedes <strong>importar</strong> los archivos que los
+            brigadistas te manden por WhatsApp para ver sus trayectorias en el mapa.
           </div>
         ) : (
           <>
-            <div className="fila">
-              <button className="boton suave mini" onClick={exportar}>
-                ⬇️ Exportar todo (JSON)
-              </button>
-            </div>
             <table className="reportes">
               <thead>
                 <tr>
                   <th>Fecha</th>
                   <th>Colonia</th>
-                  <th>Equipo</th>
-                  <th>Calles</th>
-                  <th>Material</th>
+                  <th>Eq.</th>
+                  <th>Ruta</th>
+                  <th>Entregado</th>
                   <th></th>
                 </tr>
               </thead>
@@ -68,16 +193,28 @@ export default function Historial() {
                       {r.equipo}/{r.nEquipos}
                     </td>
                     <td>
-                      {r.callesHechas}/{r.callesTotal}
+                      {r.porcentaje != null
+                        ? r.porcentaje + '%'
+                        : `${r.callesHechas ?? '—'}/${r.callesTotal ?? '—'}`}
                     </td>
                     <td>
-                      {Object.entries(r.materiales || {})
-                        .map(([m, v]) => `${m}: ${v}`)
-                        .join(', ') || '—'}
+                      {r.entregados != null
+                        ? r.entregados
+                        : Object.entries(r.materiales || {})
+                            .map(([m, v]) => `${m}: ${v}`)
+                            .join(', ') || '—'}
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button
+                        className="boton suave mini"
+                        onClick={() => setSeleccion([r])}
+                        disabled={(r.recorridoReal || []).length < 2}
+                        title="Ver trayectoria en el mapa"
+                      >
+                        Ver
+                      </button>{' '}
                       <button className="boton peligro mini" onClick={() => borrar(r.id)}>
-                        Borrar
+                        ✕
                       </button>
                     </td>
                   </tr>
@@ -88,10 +225,15 @@ export default function Historial() {
             <h3>Acumulado</h3>
             <p style={{ fontSize: '0.9rem' }}>
               {reportes.length} recorridos · {kmTotal.toFixed(1)} km asignados ·{' '}
-              {Object.entries(totales)
-                .map(([m, v]) => `${m}: ${v}`)
-                .join(' · ') || 'sin material registrado'}
+              {entregadoTotal} objetos entregados
             </p>
+            {seleccion && seleccion.length === 1 && (
+              <div className="aviso">
+                En el mapa: la línea tenue es la ruta que se le asignó al equipo; la
+                línea fuerte es por donde caminó de verdad (● inicio, ○ fin). Lo tenue
+                sin línea fuerte encima es lo que faltó por visitar.
+              </div>
+            )}
           </>
         )}
       </div>
