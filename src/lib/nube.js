@@ -117,3 +117,65 @@ export async function cargarReportesNube() {
   if (!res.ok) throw new Error('la nube respondió ' + res.status);
   return (await res.json()).map(aReporte);
 }
+
+// ---------- posiciones en vivo (una fila por equipo, se va actualizando) ----
+
+export async function subirPosicion(p) {
+  if (!nubeConfigurada()) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/posiciones`, {
+      method: 'POST',
+      headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ ...p, actualizado: new Date().toISOString() })
+    });
+  } catch {
+    /* sin señal: la posición simplemente no se reporta esta vez */
+  }
+}
+
+export async function cargarPosiciones(minutos = 30) {
+  if (!nubeConfigurada()) return [];
+  const desde = new Date(Date.now() - minutos * 60000).toISOString();
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/posiciones?actualizado=gte.${desde}&select=*&order=equipo.asc`,
+    { headers: cabeceras() }
+  );
+  if (!res.ok) throw new Error('la nube respondió ' + res.status);
+  return res.json();
+}
+
+// ---------- caché de calles compartido --------------------------------------
+// El primer teléfono que descarga una colonia de OpenStreetMap la guarda aquí;
+// los demás la leen de Supabase (rápido y confiable aunque OSM esté saturado).
+
+const CACHE_CALLES_DIAS = 30;
+
+export async function leerCallesNube(clave) {
+  if (!nubeConfigurada()) return null;
+  try {
+    const desde = new Date(Date.now() - CACHE_CALLES_DIAS * 86400000).toISOString();
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/calles_cache?clave=eq.${encodeURIComponent(clave)}` +
+        `&actualizado=gte.${desde}&select=ways`,
+      { headers: cabeceras() }
+    );
+    if (!res.ok) return null;
+    const filas = await res.json();
+    return filas.length > 0 ? filas[0].ways : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function guardarCallesNube(clave, ways) {
+  if (!nubeConfigurada()) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/calles_cache`, {
+      method: 'POST',
+      headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ clave, ways, actualizado: new Date().toISOString() })
+    });
+  } catch {
+    /* el caché compartido es opcional */
+  }
+}

@@ -17,7 +17,8 @@ import {
   nubeConfigurada,
   subirReporte,
   encolarPendiente,
-  subirPendientes
+  subirPendientes,
+  subirPosicion
 } from '../lib/nube.js';
 
 // Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
@@ -66,6 +67,7 @@ export default function Brigadista({ params }) {
   const watchId = useRef(null);
   const track = useRef([]);
   const wakeLock = useRef(null);
+  const ultimaPosSubida = useRef(0);
   const rutaRef = useRef(null);
   // cubierto[i][j] = 1 si el GPS ya pasó cerca del punto j del tramo i.
   const cubierto = useRef([]);
@@ -244,6 +246,21 @@ export default function Brigadista({ params }) {
           guardarProgreso(claveRuta, {
             track: track.current,
             cubierto: cubierto.current
+          });
+        }
+
+        // Reporta la posición al coordinador cada ~25 s (pesa ~2 KB).
+        if (Date.now() - ultimaPosSubida.current > 25000) {
+          ultimaPosSubida.current = Date.now();
+          subirPosicion({
+            id: claveRuta,
+            colonia: params.nombre,
+            col: params.col || null,
+            equipo: params.equipo,
+            n_equipos: params.nEquipos,
+            lat: p[0],
+            lng: p[1],
+            pct: rutaRef.current ? calcularPct(rutaRef.current, cubierto.current) : 0
           });
         }
 

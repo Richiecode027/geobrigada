@@ -1,6 +1,9 @@
 // Obtiene de Overpass (OpenStreetMap) todas las calles dentro de la colonia.
+// Orden de búsqueda: caché del teléfono → caché compartido en la nube →
+// servidores de OpenStreetMap (y lo encontrado se guarda en los dos cachés).
 
 import { ringsBounds } from '../lib/geo.js';
+import { leerCallesNube, guardarCallesNube } from '../lib/nube.js';
 
 // Tipos de vialidad que un brigadista recorre a pie repartiendo material.
 // Incluye privadas/callejones (service) y andadores (footway), pero excluye
@@ -85,6 +88,14 @@ export async function obtenerCalles(rings) {
   const enCache = leerCache(clave);
   if (enCache) return enCache;
 
+  // Caché compartido: si otro teléfono ya descargó esta colonia, se toma de
+  // la nube sin molestar a OpenStreetMap.
+  const deNube = await leerCallesNube(clave);
+  if (deNube) {
+    guardarCache(clave, deNube);
+    return deNube;
+  }
+
   let lastErr = null;
   // Dos vueltas a la lista de espejos: si todos fallan a la primera (suele
   // ser saturación pasajera), se reintenta una vez más antes de rendirse.
@@ -99,6 +110,7 @@ export async function obtenerCalles(rings) {
       const json = await res.json();
       const ways = json.elements.filter((e) => e.type === 'way' && e.geometry);
       guardarCache(clave, ways);
+      guardarCallesNube(clave, ways); // comparte con los demás teléfonos
       return ways;
     } catch (err) {
       lastErr = err; // intenta el siguiente espejo

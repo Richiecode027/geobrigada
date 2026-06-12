@@ -19,9 +19,13 @@ para brigadistas, registro de material repartido.
 - Commits SIN "Co-Authored-By" y con autor Richiecode027: el plan gratis de
   Netlify bloquea builds de repos privados si detecta colaboradores no
   verificados (incluye coautores en el mensaje del commit).
-- Nube (fase 2, hecha): Supabase, tabla `reportes` (esquema en
-  scripts/esquema-supabase.sql, credenciales en src/lib/nube.js). Los reportes
-  de brigadistas suben solos; el Historial combina nube + localStorage.
+- Nube (fase 2, hecha): Supabase, tablas `reportes`, `posiciones` (en vivo) y
+  `calles_cache` (esquema en scripts/esquema-supabase.sql, credenciales en
+  src/lib/nube.js). Los reportes de brigadistas suben solos; el Historial
+  combina nube + localStorage. Vistas del coordinador: Planear, En vivo
+  (posiciones cada ~25 s), Cobertura (colonias y cuadras cubiertas), Historial.
+- Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
+  azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Probar: `npm run dev` y preview en puerto 5180 (.claude/launch.json). GPS
   requiere HTTPS (`npm run dev:movil` para probar desde teléfono en LAN).
   Algoritmo: `node scripts/test-rutas.mjs` y
