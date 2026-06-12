@@ -17,7 +17,7 @@ export function decodificarPoly(str) {
   });
 }
 
-export function linkEquipo({ colonia, nEquipos, equipo }) {
+export function linkEquipo({ colonia, nEquipos, equipo, actividad }) {
   const params = new URLSearchParams();
   if (colonia.clave) {
     params.set('col', colonia.clave);
@@ -27,6 +27,7 @@ export function linkEquipo({ colonia, nEquipos, equipo }) {
   params.set('n', String(nEquipos));
   params.set('t', String(equipo));
   params.set('nombre', colonia.nombre);
+  if (actividad) params.set('act', actividad);
   return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
 }
 
@@ -38,6 +39,9 @@ export function leerParametros() {
     poly: p.get('poly'),
     nEquipos: parseInt(p.get('n'), 10),
     equipo: parseInt(p.get('t'), 10),
-    nombre: p.get('nombre') || 'Colonia'
+    nombre: p.get('nombre') || 'Colonia',
+    // La actividad separa visitas distintas a la misma colonia
+    // (folletos hoy, calendarios la próxima semana, etc.).
+    actividad: p.get('act') || 'Reparto'
   };
 }

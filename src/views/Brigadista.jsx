@@ -72,7 +72,14 @@ export default function Brigadista({ params }) {
   // cubierto[i][j] = 1 si el GPS ya pasó cerca del punto j del tramo i.
   const cubierto = useRef([]);
 
-  const claveRuta = `${params.col || 'poly' + hashSimple(params.poly || '')}_${params.nEquipos}_${params.equipo}`;
+  // La actividad separa el avance de visitas distintas a la misma colonia
+  // (folletos hoy vs. calendarios en dos semanas: cada una empieza de cero).
+  const actNorm = (params.actividad || 'Reparto')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+  const claveRuta = `${params.col || 'poly' + hashSimple(params.poly || '')}_${params.nEquipos}_${params.equipo}_${actNorm}`;
 
   const [fase, setFase] = useState('cargando'); // cargando | listo | formulario | terminado | error
   const [error, setError] = useState('');
@@ -258,6 +265,7 @@ export default function Brigadista({ params }) {
             col: params.col || null,
             equipo: params.equipo,
             n_equipos: params.nEquipos,
+            actividad: params.actividad,
             lat: p[0],
             lng: p[1],
             pct: rutaRef.current ? calcularPct(rutaRef.current, cubierto.current) : 0
@@ -320,6 +328,7 @@ export default function Brigadista({ params }) {
       poly: params.poly || null,
       equipo: params.equipo,
       nEquipos: params.nEquipos,
+      actividad: params.actividad,
       km: Math.round(totalKm * 10) / 10,
       porcentaje: pct,
       entregados: n,
@@ -345,6 +354,7 @@ export default function Brigadista({ params }) {
     const texto =
       `🗺️ GeoBrigada – Reporte de recorrido\n` +
       `Colonia: ${params.nombre}\n` +
+      `Actividad: ${params.actividad}\n` +
       `Equipo: ${params.equipo} de ${params.nEquipos}\n` +
       `Fecha: ${new Date().toLocaleString('es-MX')}\n` +
       `Ruta recorrida: ${pct}% (${totalKm.toFixed(1)} km asignados)\n` +
@@ -392,7 +402,7 @@ export default function Brigadista({ params }) {
       <header className="encabezado">
         <h1>🗺️ {params.nombre}</h1>
         <span className="sub">
-          Equipo {params.equipo} de {params.nEquipos}
+          Equipo {params.equipo} de {params.nEquipos} · {params.actividad}
         </span>
       </header>
       <div className="contenido">

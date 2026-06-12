@@ -234,7 +234,12 @@ export default function Historial() {
                 {todos.map((r) => (
                   <tr key={r.id}>
                     <td>{new Date(r.fecha).toLocaleDateString('es-MX')}</td>
-                    <td>{r.colonia}</td>
+                    <td>
+                      {r.colonia}
+                      <div style={{ fontSize: '0.75rem', color: '#888' }}>
+                        {r.actividad || 'Reparto'}
+                      </div>
+                    </td>
                     <td>
                       {r.equipo}/{r.nEquipos}
                     </td>

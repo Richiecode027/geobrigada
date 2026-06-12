@@ -24,6 +24,9 @@ para brigadistas, registro de material repartido.
   src/lib/nube.js). Los reportes de brigadistas suben solos; el Historial
   combina nube + localStorage. Vistas del coordinador: Planear, En vivo
   (posiciones cada ~25 s), Cobertura (colonias y cuadras cubiertas), Historial.
+- Cada brigada lleva ACTIVIDAD (Folletos, Calendarios, Visita...; param `act`
+  del link, default "Reparto"): separa avance, reportes y cobertura de visitas
+  repetidas a la misma colonia. La Cobertura filtra por actividad.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Probar: `npm run dev` y preview en puerto 5180 (.claude/launch.json). GPS

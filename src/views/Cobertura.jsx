@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
 import { cargarReportes } from '../lib/storage.js';
@@ -18,20 +18,57 @@ function colorPorPct(pct) {
   return '#d03333'; // rojo: apenas tocada
 }
 
+function agrupar(reportes) {
+  const porColonia = new Map();
+  for (const r of reportes) {
+    const k = r.col || 'manual:' + (r.colonia || '?');
+    let g = porColonia.get(k);
+    if (!g) {
+      g = {
+        k,
+        col: r.col || null,
+        poly: r.poly || null,
+        nombre: r.colonia || 'Colonia',
+        visitas: 0,
+        mejorPct: 0,
+        entregados: 0,
+        kmCubiertos: 0,
+        ultimaFecha: r.fecha,
+        tracks: []
+      };
+      porColonia.set(k, g);
+    }
+    g.visitas++;
+    g.mejorPct = Math.max(g.mejorPct, r.porcentaje || 0);
+    g.entregados +=
+      r.entregados != null
+        ? r.entregados
+        : Object.values(r.materiales || {}).reduce((s, v) => s + v, 0);
+    g.kmCubiertos += ((r.km || 0) * (r.porcentaje || 0)) / 100;
+    if (r.fecha > g.ultimaFecha) g.ultimaFecha = r.fecha;
+    if ((r.recorridoReal || []).length > 1) g.tracks.push(r.recorridoReal);
+    if (!g.poly && r.poly) g.poly = r.poly;
+  }
+  return [...porColonia.values()].sort((a, b) =>
+    b.ultimaFecha.localeCompare(a.ultimaFecha)
+  );
+}
+
 export default function Cobertura() {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef);
   const capaPoligonos = useRef(null);
   const capaDetalle = useRef(null);
 
-  const [grupos, setGrupos] = useState([]); // una entrada por colonia visitada
+  const [reportes, setReportes] = useState([]); // todos, nube + locales
+  const [filtro, setFiltro] = useState(''); // '' = todas las actividades
   const [cargando, setCargando] = useState(true);
   const [detalle, setDetalle] = useState(null); // grupo seleccionado
-  const [detalleInfo, setDetalleInfo] = useState(''); // resultado del cálculo fino
+  const [detalleInfo, setDetalleInfo] = useState('');
   const [calculando, setCalculando] = useState(false);
   const [error, setError] = useState('');
 
-  // --- carga: reportes de la nube + locales, agrupados por colonia ----------
+  // --- carga: reportes de la nube + locales ---------------------------------
   useEffect(() => {
     (async () => {
       let nube = [];
@@ -43,50 +80,35 @@ export default function Cobertura() {
       const locales = cargarReportes();
       const firma = (r) => `${r.fecha}|${r.equipo}|${r.colonia}`;
       const enNube = new Set(nube.map(firma));
-      const todos = [...nube, ...locales.filter((r) => !enNube.has(firma(r)))];
-
-      const porColonia = new Map();
-      for (const r of todos) {
-        const k = r.col || 'manual:' + (r.colonia || '?');
-        let g = porColonia.get(k);
-        if (!g) {
-          g = {
-            k,
-            col: r.col || null,
-            poly: r.poly || null,
-            nombre: r.colonia || 'Colonia',
-            visitas: 0,
-            mejorPct: 0,
-            entregados: 0,
-            kmCubiertos: 0,
-            ultimaFecha: r.fecha,
-            tracks: []
-          };
-          porColonia.set(k, g);
-        }
-        g.visitas++;
-        g.mejorPct = Math.max(g.mejorPct, r.porcentaje || 0);
-        g.entregados +=
-          r.entregados != null
-            ? r.entregados
-            : Object.values(r.materiales || {}).reduce((s, v) => s + v, 0);
-        g.kmCubiertos += ((r.km || 0) * (r.porcentaje || 0)) / 100;
-        if (r.fecha > g.ultimaFecha) g.ultimaFecha = r.fecha;
-        if ((r.recorridoReal || []).length > 1) g.tracks.push(r.recorridoReal);
-        if (!g.poly && r.poly) g.poly = r.poly;
-      }
-      const lista = [...porColonia.values()].sort((a, b) =>
-        b.ultimaFecha.localeCompare(a.ultimaFecha)
-      );
-      setGrupos(lista);
+      setReportes([...nube, ...locales.filter((r) => !enNube.has(firma(r)))]);
       setCargando(false);
     })();
   }, []);
 
+  // Actividades distintas que existen en los reportes (para el filtro).
+  const actividades = useMemo(
+    () => [...new Set(reportes.map((r) => r.actividad || 'Reparto'))].sort(),
+    [reportes]
+  );
+
+  // Agrupa por colonia, respetando el filtro de actividad.
+  const grupos = useMemo(() => {
+    const filtrados = filtro
+      ? reportes.filter((r) => (r.actividad || 'Reparto') === filtro)
+      : reportes;
+    return agrupar(filtrados);
+  }, [reportes, filtro]);
+
+  // Al cambiar el filtro se cierra el detalle (pertenece a otro conjunto).
+  useEffect(() => {
+    setDetalle(null);
+  }, [filtro]);
+
   // --- pinta los polígonos de las colonias visitadas ------------------------
   useEffect(() => {
-    if (!map || grupos.length === 0) return;
+    if (!map) return;
     if (capaPoligonos.current) capaPoligonos.current.remove();
+    if (grupos.length === 0) return;
     const g = L.layerGroup().addTo(map);
     const bounds = [];
     (async () => {
@@ -166,8 +188,9 @@ export default function Cobertura() {
 
         const pctReal = metrosTotal ? Math.round((100 * metrosCubiertos) / metrosTotal) : 0;
         setDetalleInfo(
-          `${detalle.nombre}: ${pctReal}% de sus calles cubiertas según el GPS ` +
-            `(${(metrosCubiertos / 1000).toFixed(1)} de ${(metrosTotal / 1000).toFixed(1)} km). ` +
+          `${detalle.nombre}${filtro ? ' (' + filtro + ')' : ''}: ${pctReal}% de sus ` +
+            `calles cubiertas según el GPS (${(metrosCubiertos / 1000).toFixed(1)} de ` +
+            `${(metrosTotal / 1000).toFixed(1)} km). ` +
             'Verde = ya repartido · rojo punteado = falta.'
         );
       } catch (e) {
@@ -191,20 +214,39 @@ export default function Cobertura() {
         {error && <div className="aviso">{error}</div>}
         {cargando && <p>Cargando recorridos…</p>}
 
-        {!cargando && grupos.length === 0 && (
+        {!cargando && reportes.length === 0 && (
           <div className="aviso">
             Todavía no hay recorridos guardados. Cuando las brigadas empiecen a
             reportar, aquí se pinta el mapa de lo cubierto y lo que falta.
           </div>
         )}
 
-        {!cargando && grupos.length > 0 && (
+        {!cargando && reportes.length > 0 && (
           <>
+            {actividades.length > 1 && (
+              <div className="fila">
+                <label style={{ fontSize: '0.88rem' }}>Actividad:</label>
+                <select
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
+                  style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid var(--borde)' }}
+                >
+                  <option value="">Todas las actividades</option>
+                  {actividades.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <p style={{ fontSize: '0.9rem' }}>
-              <strong>{grupos.length}</strong> colonia(s) visitada(s) ·{' '}
+              <strong>{grupos.length}</strong> colonia(s) ·{' '}
               <strong>{totalVisitas}</strong> recorridos ·{' '}
               <strong>{totalKm.toFixed(1)}</strong> km cubiertos ·{' '}
               <strong>{totalEntregado}</strong> objetos entregados
+              {filtro ? ` · actividad: ${filtro}` : ''}
             </p>
 
             {calculando && <div className="aviso">⏳ Calculando cuadra por cuadra…</div>}
@@ -236,9 +278,9 @@ export default function Cobertura() {
             ))}
 
             <div className="aviso">
-              El color de cada colonia es el mejor porcentaje logrado ahí. Toca una
-              colonia (en el mapa o en la lista) para ver cuadra por cuadra qué se
-              cubrió y qué falta.
+              El color de cada colonia es el mejor porcentaje logrado ahí
+              {filtro ? ` en "${filtro}"` : ' (todas las actividades juntas)'}. Toca
+              una colonia para ver cuadra por cuadra qué se cubrió y qué falta.
             </div>
           </>
         )}

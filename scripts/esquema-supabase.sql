@@ -75,3 +75,10 @@ create policy "guarda cache calles"
 
 create policy "refresca cache calles"
   on calles_cache for update to anon using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Actividades (jun 2026): cada brigada lleva etiqueta de actividad (Folletos,
+-- Calendarios, Visita...) para separar visitas repetidas a la misma colonia.
+
+alter table reportes add column if not exists actividad text;
+alter table posiciones add column if not exists actividad text;

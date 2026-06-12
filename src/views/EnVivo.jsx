@@ -61,7 +61,8 @@ export default function EnVivo() {
       const color = TEAM_COLORS[((p.equipo || 1) - 1) % TEAM_COLORS.length];
       marcadorInicio([p.lat, p.lng], p.equipo, color)
         .bindTooltip(
-          `Equipo ${p.equipo} · ${p.colonia || ''} · ${p.pct ?? 0}% · ${haceCuanto(p.actualizado)}`
+          `Equipo ${p.equipo} · ${p.colonia || ''}${p.actividad ? ' · ' + p.actividad : ''}` +
+            ` · ${p.pct ?? 0}% · ${haceCuanto(p.actualizado)}`
         )
         .addTo(g);
     }
@@ -106,6 +107,7 @@ export default function EnVivo() {
             <div key={p.id} className="tarjeta-equipo" style={{ borderLeftColor: color }}>
               <strong>Equipo {p.equipo}</strong>
               {p.colonia ? ` · ${p.colonia}` : ''}
+              {p.actividad ? ` · ${p.actividad}` : ''}
               <div className="datos">
                 Ruta recorrida: {p.pct ?? 0}% · visto {haceCuanto(p.actualizado)}
               </div>

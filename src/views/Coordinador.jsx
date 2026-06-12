@@ -21,6 +21,7 @@ export default function Coordinador() {
   const [buscando, setBuscando] = useState(false);
   const [colonia, setColonia] = useState(null);
   const [nEquipos, setNEquipos] = useState(2);
+  const [actividad, setActividad] = useState('');
   const [equipos, setEquipos] = useState(null);
   const [encuentro, setEncuentro] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -187,8 +188,15 @@ export default function Coordinador() {
   }, [map, equipos]);
 
   // --- compartir ----------------------------------------------------------
+  const nombreActividad = actividad.trim() || 'Reparto';
+
   function link(i) {
-    return linkEquipo({ colonia, nEquipos: equipos.length, equipo: i + 1 });
+    return linkEquipo({
+      colonia,
+      nEquipos: equipos.length,
+      equipo: i + 1,
+      actividad: nombreActividad
+    });
   }
 
   async function copiarLink(i) {
@@ -203,7 +211,7 @@ export default function Coordinador() {
 
   function compartirWhatsApp(i) {
     const texto =
-      `🗺️ GeoBrigada – ${colonia.nombre}\n` +
+      `🗺️ GeoBrigada – ${colonia.nombre} · ${nombreActividad}\n` +
       `Eres el *Equipo ${i + 1}* de ${equipos.length}. ` +
       `Tu ruta mide ${equipos[i].km.toFixed(1)} km.\n` +
       `Ábrela aquí y activa tu GPS:\n${link(i)}`;
@@ -216,7 +224,8 @@ export default function Coordinador() {
       (eq, i) => `*Equipo ${i + 1}* (${eq.km.toFixed(1)} km):\n${link(i)}`
     );
     const texto =
-      `🗺️ GeoBrigada – ${colonia.nombre} (${equipos.length} equipos)\n` +
+      `🗺️ GeoBrigada – ${colonia.nombre} · ${nombreActividad} ` +
+      `(${equipos.length} equipos)\n` +
       `Cada quien abre SOLO el link de su equipo y activa su GPS:\n\n` +
       lineas.join('\n\n');
     window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
@@ -276,9 +285,26 @@ export default function Coordinador() {
 
         {colonia && (
           <>
-            <h2>2. ¿Cuántos equipos hay hoy?</h2>
+            <h2>2. ¿Qué actividad es y cuántos equipos hay?</h2>
             <div className="fila">
               <strong style={{ flex: 1 }}>{colonia.nombre}</strong>
+            </div>
+            <div className="fila">
+              <input
+                type="text"
+                list="lista-actividades"
+                placeholder="Actividad (ej. Folletos)"
+                value={actividad}
+                onChange={(e) => setActividad(e.target.value)}
+                style={{ flex: 1, minWidth: '160px' }}
+              />
+              <datalist id="lista-actividades">
+                <option value="Folletos" />
+                <option value="Calendarios" />
+                <option value="Volantes" />
+                <option value="Lonas" />
+                <option value="Visita" />
+              </datalist>
             </div>
             <div className="fila">
               <input
