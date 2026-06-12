@@ -16,6 +16,9 @@ para brigadistas, registro de material repartido.
 - EN PRODUCCIÓN: https://geobrigada.netlify.app — Netlify construye y publica
   solo con cada push a `master` de github.com/Richiecode027/geobrigada.
   Publicar un cambio = commit + `git push`. No usar Netlify Drop.
+- Commits SIN "Co-Authored-By" y con autor Richiecode027: el plan gratis de
+  Netlify bloquea builds de repos privados si detecta colaboradores no
+  verificados (incluye coautores en el mensaje del commit).
 - Nube (fase 2, hecha): Supabase, tabla `reportes` (esquema en
   scripts/esquema-supabase.sql, credenciales en src/lib/nube.js). Los reportes
   de brigadistas suben solos; el Historial combina nube + localStorage.
