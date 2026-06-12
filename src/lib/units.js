@@ -1,11 +1,11 @@
-// Convierte las calles de OSM en "unidades": tramos de calle de ~180 m máximo.
-// Las unidades son la pieza que se reparte entre equipos; tramos cortos
-// permiten balancear mejor la carga de cada equipo.
+// Convierte las calles de OSM en "unidades" de reparto. La unidad es la
+// CUADRA COMPLETA (de esquina a esquina): así una calle nunca cambia de
+// equipo a media cuadra y cada brigada sabe exactamente dónde termina lo
+// suyo. (Antes se partía cada ~180 m y los cortes caían entre casas.)
 
 import { haversine, pointInAnyRing, distanciaABorde, ringsBounds } from './geo.js';
 import { buildAdjacency } from './partition.js';
 
-const MAX_UNIT_METERS = 180;
 // Migajas: piezas de calle aisladas más cortas que esto (restos del recorte
 // en el límite de la colonia) se descartan para no ensuciar las rutas.
 const MIN_COMPONENTE_M = 60;
@@ -15,6 +15,9 @@ const TOL_BORDE_M = 20;
 // Un tramo recto largo puede cruzar la colonia sin tener puntos intermedios;
 // se agregan puntos cada ~25 m para que el recorte no lo pierda.
 const PASO_DENSIFICAR_M = 25;
+
+// Misma precisión que usa el grafo de conectividad (partition.js).
+const claveNodo = (lat, lon) => lat.toFixed(6) + ',' + lon.toFixed(6);
 
 function densificar(coords) {
   const out = [coords[0]];
@@ -48,44 +51,64 @@ export function buildUnits(ways, rings) {
     return pointInAnyRing(p, rings) || distanciaABorde(p, rings) <= TOL_BORDE_M;
   }
 
-  // Parte una corrida de puntos (toda dentro del límite) en unidades de ~180 m.
+  // Una corrida de puntos dentro del límite = una unidad completa (no se
+  // parte por longitud: solo en esquinas y en el borde de la colonia).
   function agregarCorrida(corrida, name) {
-    let cur = [corrida[0]];
+    if (corrida.length < 2) return;
     let len = 0;
-    for (let i = 1; i < corrida.length; i++) {
-      const d = haversine(corrida[i - 1], corrida[i]);
-      cur.push(corrida[i]);
-      len += d;
-      const esUltimo = i === corrida.length - 1;
-      if (len >= MAX_UNIT_METERS || esUltimo) {
-        if (cur.length >= 2 && len > 5) {
-          const mid = cur[Math.floor(cur.length / 2)];
-          units.push({ id: id++, name, coords: cur, length: len, mid });
-        }
-        cur = [corrida[i]];
-        len = 0;
-      }
+    for (let i = 1; i < corrida.length; i++) len += haversine(corrida[i - 1], corrida[i]);
+    if (len <= 5) return;
+    const mid = corrida[Math.floor(corrida.length / 2)];
+    units.push({ id: id++, name, coords: corrida, length: len, mid });
+  }
+
+  // 1) Esquinas: nodos que pertenecen a más de una calle (cruces reales).
+  //    Se cuenta con TODAS las calles del área (también las de afuera del
+  //    límite): una esquina con una calle vecina sigue siendo esquina.
+  const callesPorNodo = new Map();
+  for (const w of ways) {
+    if (!w.geometry) continue;
+    const visto = new Set();
+    for (const g of w.geometry) {
+      const k = claveNodo(g.lat, g.lon);
+      if (visto.has(k)) continue; // una calle cuenta una sola vez por nodo
+      visto.add(k);
+      callesPorNodo.set(k, (callesPorNodo.get(k) || 0) + 1);
     }
   }
 
   for (const w of ways) {
     const crudos = w.geometry.map((g) => [g.lat, g.lon]);
     if (crudos.length < 2) continue;
-    const coords = densificar(crudos);
     const name = (w.tags && w.tags.name) || 'Calle sin nombre';
 
-    // Recorte punto por punto: solo se conservan corridas de puntos
-    // consecutivos dentro del límite (o sobre él, con tolerancia pequeña).
-    let corrida = [];
-    for (const p of coords) {
-      if (dentro(p)) {
-        corrida.push(p);
-      } else {
-        if (corrida.length >= 2) agregarCorrida(corrida, name);
-        corrida = [];
+    // 2) Parte la calle en cuadras: corta en cada esquina interior.
+    const cuadras = [];
+    let cur = [crudos[0]];
+    for (let i = 1; i < crudos.length; i++) {
+      cur.push(crudos[i]);
+      const esInterior = i < crudos.length - 1;
+      if (esInterior && (callesPorNodo.get(claveNodo(crudos[i][0], crudos[i][1])) || 0) >= 2) {
+        cuadras.push(cur);
+        cur = [crudos[i]];
       }
     }
-    if (corrida.length >= 2) agregarCorrida(corrida, name);
+    if (cur.length >= 2) cuadras.push(cur);
+
+    // 3) Recorta cada cuadra al límite de la colonia, punto por punto.
+    for (const cuadra of cuadras) {
+      const coords = densificar(cuadra);
+      let corrida = [];
+      for (const p of coords) {
+        if (dentro(p)) {
+          corrida.push(p);
+        } else {
+          agregarCorrida(corrida, name);
+          corrida = [];
+        }
+      }
+      agregarCorrida(corrida, name);
+    }
   }
 
   // Limpia migajas: componentes aisladas minúsculas que deja el recorte.
