@@ -1,6 +1,8 @@
 // Catálogo local de colonias de Morelia (generado por scripts/build-colonias.mjs).
 // Fuente: INEGI DCAH 2023 — límites oficiales delimitados por el IMPLAN de Morelia.
 
+import { pointInAnyRing } from './geo.js';
+
 let datos = null;
 
 export async function cargarCatalogo() {
@@ -34,4 +36,18 @@ export async function buscarColonias(texto) {
 export async function ringsPorClave(k) {
   const { polys } = await cargarCatalogo();
   return polys[k] || null;
+}
+
+// ¿Qué colonia contiene este punto? Devuelve { n, k, t, cp, rings } o null.
+// Permite seleccionar una colonia tocando el mapa, sin saber su nombre.
+export async function coloniaEnPunto(lat, lng) {
+  const { colonias, polys } = await cargarCatalogo();
+  const p = [lat, lng];
+  for (const c of colonias) {
+    const rings = polys[c.k];
+    if (rings && pointInAnyRing(p, rings)) {
+      return { ...c, rings };
+    }
+  }
+  return null;
 }

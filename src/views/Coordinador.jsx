@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap, marcadorInicio, marcadorEncuentro } from '../components/useMap.js';
-import { buscarColonias, ringsPorClave } from '../lib/colonias.js';
+import { buscarColonias, ringsPorClave, coloniaEnPunto } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, orderRoute, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
@@ -80,6 +80,26 @@ export default function Coordinador() {
       );
     }
   }
+
+  // --- seleccionar colonia tocando el mapa (pulsación larga / clic derecho) --
+  async function seleccionarEnPunto(latlng) {
+    setResultados(null);
+    const c = await coloniaEnPunto(latlng.lat, latlng.lng);
+    if (c) {
+      setEquipos(null);
+      setAviso('');
+      setColonia({ nombre: c.n, clave: c.k, rings: c.rings, tienePoligono: true });
+    } else {
+      setAviso('Ahí no hay ninguna colonia del catálogo. Toca dentro de una zona urbana de Morelia.');
+    }
+  }
+
+  useEffect(() => {
+    if (!map || dibujando) return; // al dibujar a mano, el toque agrega puntos
+    const alTocarLargo = (e) => seleccionarEnPunto(e.latlng);
+    map.on('contextmenu', alTocarLargo);
+    return () => map.off('contextmenu', alTocarLargo);
+  }, [map, dibujando]);
 
   // --- dibujo manual ----------------------------------------------------
   function iniciarDibujo() {
@@ -304,6 +324,10 @@ export default function Coordinador() {
             {buscando ? 'Buscando…' : 'Buscar'}
           </button>
         </form>
+        <p className="nota" style={{ marginTop: 0 }}>
+          💡 O deja el dedo pulsado sobre el mapa para seleccionar la colonia de
+          ese punto (en computadora: clic derecho).
+        </p>
 
         <div className="fila">
           <button
