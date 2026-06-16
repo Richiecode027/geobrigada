@@ -15,6 +15,8 @@ export default function Coordinador() {
   const capaColonia = useRef(null);
   const capaEquipos = useRef(null);
   const capaDibujo = useRef(null);
+  const capaMiUbicacion = useRef(null);
+  const watchId = useRef(null);
 
   const [query, setQuery] = useState('');
   const [resultados, setResultados] = useState(null);
@@ -30,6 +32,8 @@ export default function Coordinador() {
   const [dibujando, setDibujando] = useState(false);
   const [puntos, setPuntos] = useState([]);
   const [copiado, setCopiado] = useState(-1);
+  const [miUbicacion, setMiUbicacion] = useState(null);
+  const [gpsError, setGpsError] = useState('');
 
   // --- búsqueda (catálogo local de 866 colonias de Morelia) ---------------
   async function buscar(e) {
@@ -143,6 +147,57 @@ export default function Coordinador() {
     map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
   }, [map, colonia]);
 
+  // --- mi ubicación (para saber hacia dónde caminar a la colonia) ----------
+  function activarMiUbicacion() {
+    if (!('geolocation' in navigator)) {
+      setGpsError('Este navegador no tiene GPS disponible.');
+      return;
+    }
+    setGpsError('');
+    let primera = true;
+    watchId.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const p = [pos.coords.latitude, pos.coords.longitude];
+        setMiUbicacion({ p, precision: pos.coords.accuracy });
+        if (primera && map) {
+          map.setView(p, 16);
+          primera = false;
+        }
+      },
+      (err) => setGpsError('No se pudo obtener tu ubicación. Revisa los permisos. (' + err.message + ')'),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+    );
+  }
+
+  useEffect(() => {
+    return () => {
+      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!map) return;
+    if (capaMiUbicacion.current) capaMiUbicacion.current.remove();
+    if (!miUbicacion) return;
+    const g = L.layerGroup().addTo(map);
+    L.circle(miUbicacion.p, {
+      radius: miUbicacion.precision,
+      color: '#1d6fd1',
+      weight: 1,
+      fillOpacity: 0.1
+    }).addTo(g);
+    L.circleMarker(miUbicacion.p, {
+      radius: 8,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#1d6fd1',
+      fillOpacity: 1
+    })
+      .bindTooltip('Aquí estás tú')
+      .addTo(g);
+    capaMiUbicacion.current = g;
+  }, [map, miUbicacion]);
+
   // --- generar rutas ------------------------------------------------------
   async function generarRutas() {
     setError('');
@@ -249,6 +304,19 @@ export default function Coordinador() {
             {buscando ? 'Buscando…' : 'Buscar'}
           </button>
         </form>
+
+        <div className="fila">
+          <button
+            className={miUbicacion ? 'boton exito mini' : 'boton suave mini'}
+            onClick={miUbicacion ? () => map && map.setView(miUbicacion.p, 16) : activarMiUbicacion}
+          >
+            {miUbicacion ? '📍 Centrar en mí' : '📍 Ver mi ubicación'}
+          </button>
+          <span style={{ fontSize: '0.8rem', color: '#666' }}>
+            para saber hacia dónde caminar a la colonia
+          </span>
+        </div>
+        {gpsError && <div className="error">{gpsError}</div>}
 
         {resultados &&
           resultados.map((r, i) => (
