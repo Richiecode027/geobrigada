@@ -20,6 +20,7 @@ import {
   subirPendientes,
   subirPosicion
 } from '../lib/nube.js';
+import { compartirGPX } from '../lib/gpx.js';
 
 // Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
 const RADIO_CUBIERTO_M = 30;
@@ -538,9 +539,24 @@ export default function Brigadista({ params }) {
               )}
 
               <div className="resumen-final">{resumen}</div>
+
+              <div className="fila" style={{ marginTop: 10 }}>
+                <button
+                  className="boton primario"
+                  onClick={() => compartirGPX(reporteFinal)}
+                  disabled={!reporteFinal || (reporteFinal.recorridoReal || []).length < 2}
+                >
+                  📍 Enviar recorrido (.gpx)
+                </button>
+              </div>
+              <div className="aviso">
+                Manda el archivo <strong>.gpx</strong> con tu recorrido por WhatsApp, junto
+                con los objetos entregados (botón de abajo). Es el mismo formato de siempre.
+              </div>
+
               <div className="fila" style={{ marginTop: 10 }}>
                 <button className="boton suave" onClick={copiarResumen}>
-                  Copiar resumen
+                  Copiar datos
                 </button>
                 <button
                   className="boton exito"
@@ -548,7 +564,7 @@ export default function Brigadista({ params }) {
                     window.open('https://wa.me/?text=' + encodeURIComponent(resumen), '_blank')
                   }
                 >
-                  Enviar por WhatsApp
+                  Enviar datos por WhatsApp
                 </button>
               </div>
               {estadoNube !== 'ok' && estadoNube !== 'subiendo' && (

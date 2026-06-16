@@ -9,6 +9,7 @@ import { buildUnits } from '../lib/units.js';
 import { partition, TEAM_COLORS } from '../lib/partition.js';
 import { decodificarPoly } from '../lib/links.js';
 import { ringsBounds, partirTrayectoria } from '../lib/geo.js';
+import { compartirGPX } from '../lib/gpx.js';
 
 export default function Historial() {
   const mapaRef = useRef(null);
@@ -263,6 +264,14 @@ export default function Historial() {
                         title="Ver trayectoria en el mapa"
                       >
                         Ver
+                      </button>{' '}
+                      <button
+                        className="boton suave mini"
+                        onClick={() => compartirGPX(r)}
+                        disabled={(r.recorridoReal || []).length < 2}
+                        title="Descargar/enviar el recorrido en .gpx"
+                      >
+                        GPX
                       </button>{' '}
                       {!r.delaNube && (
                         <button className="boton peligro mini" onClick={() => borrar(r.id)}>
