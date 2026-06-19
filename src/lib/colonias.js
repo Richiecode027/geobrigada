@@ -32,10 +32,22 @@ export async function buscarColonias(texto) {
   return [...empiezan, ...contienen].slice(0, 20);
 }
 
+// Todas las colonias del catálogo ({ k, n, t, cp, v }), ordenadas por nombre.
+export async function todasLasColonias() {
+  const { colonias } = await cargarCatalogo();
+  return colonias;
+}
+
 // Anillos [lat,lng] de la colonia, por su clave geoestadística (CVEGEO).
 export async function ringsPorClave(k) {
   const { polys } = await cargarCatalogo();
   return polys[k] || null;
+}
+
+// Datos de una colonia por su clave (incluye viviendas "v"), o null.
+export async function coloniaPorClave(k) {
+  const { colonias } = await cargarCatalogo();
+  return colonias.find((c) => c.k === k) || null;
 }
 
 // ¿Qué colonia contiene este punto? Devuelve { n, k, t, cp, rings } o null.

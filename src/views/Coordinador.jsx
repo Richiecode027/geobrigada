@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap, marcadorInicio, marcadorEncuentro } from '../components/useMap.js';
-import { buscarColonias, ringsPorClave, coloniaEnPunto } from '../lib/colonias.js';
+import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, orderRoute, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
 import { ringsBounds } from '../lib/geo.js';
 import { linkEquipo } from '../lib/links.js';
+import { cargarActividades, recordarActividad } from '../lib/storage.js';
 
-export default function Coordinador() {
+export default function Coordinador({ contexto }) {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef);
 
@@ -24,6 +25,9 @@ export default function Coordinador() {
   const [colonia, setColonia] = useState(null);
   const [nEquipos, setNEquipos] = useState(2);
   const [actividad, setActividad] = useState('');
+  const [campana, setCampana] = useState('');
+  const [brigada, setBrigada] = useState('');
+  const [actividadesGuardadas, setActividadesGuardadas] = useState(cargarActividades());
   const [equipos, setEquipos] = useState(null);
   const [encuentro, setEncuentro] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -65,13 +69,37 @@ export default function Coordinador() {
     return () => clearTimeout(tid);
   }, [query]);
 
+  // Cuando la vista Brigadas manda una colonia a planear: la precarga junto con
+  // sus etiquetas (campaña, actividad, brigada).
+  useEffect(() => {
+    if (!contexto) return;
+    (async () => {
+      setCampana(contexto.campana || '');
+      setActividad(contexto.actividad || '');
+      setBrigada(contexto.brigada || '');
+      setEquipos(null);
+      setAviso('');
+      const rings = await ringsPorClave(contexto.clave);
+      const datos = await coloniaPorClave(contexto.clave);
+      if (rings) {
+        setColonia({
+          nombre: contexto.nombre,
+          clave: contexto.clave,
+          rings,
+          tienePoligono: true,
+          viviendas: datos ? datos.v : 0
+        });
+      }
+    })();
+  }, [contexto && contexto.sello]);
+
   async function elegirResultado(r) {
     setResultados(null);
     setEquipos(null);
     setAviso('');
     const rings = await ringsPorClave(r.k);
     if (rings) {
-      setColonia({ nombre: r.n, clave: r.k, rings, tienePoligono: true });
+      setColonia({ nombre: r.n, clave: r.k, rings, tienePoligono: true, viviendas: r.v });
     } else {
       setColonia(null);
       setAviso(
@@ -88,7 +116,7 @@ export default function Coordinador() {
     if (c) {
       setEquipos(null);
       setAviso('');
-      setColonia({ nombre: c.n, clave: c.k, rings: c.rings, tienePoligono: true });
+      setColonia({ nombre: c.n, clave: c.k, rings: c.rings, tienePoligono: true, viviendas: c.v });
     } else {
       setAviso('Ahí no hay ninguna colonia del catálogo. Toca dentro de una zona urbana de Morelia.');
     }
@@ -240,6 +268,8 @@ export default function Coordinador() {
       });
       setEncuentro(inicio);
       setEquipos(eq);
+      // Recuerda la actividad usada para sugerirla la próxima vez.
+      setActividadesGuardadas(recordarActividad(actividad.trim() || 'Reparto'));
     } catch (err) {
       setError(err.message);
     }
@@ -265,12 +295,23 @@ export default function Coordinador() {
   // --- compartir ----------------------------------------------------------
   const nombreActividad = actividad.trim() || 'Reparto';
 
+  // Viviendas estimadas por equipo: se reparten en proporción a sus km de calle
+  // (asume que las casas están repartidas de forma pareja a lo largo de la red).
+  function vivEquipo(i) {
+    if (!equipos || !colonia || !colonia.viviendas) return 0;
+    const kmTotal = equipos.reduce((s, e) => s + e.km, 0);
+    if (kmTotal <= 0) return 0;
+    return Math.round((colonia.viviendas * equipos[i].km) / kmTotal);
+  }
+
   function link(i) {
     return linkEquipo({
       colonia,
       nEquipos: equipos.length,
       equipo: i + 1,
-      actividad: nombreActividad
+      actividad: nombreActividad,
+      campana: campana.trim(),
+      brigada: brigada.trim()
     });
   }
 
@@ -284,23 +325,38 @@ export default function Coordinador() {
     }
   }
 
+  // Encabezado con campaña / brigada cuando vienen del reparto de brigadas.
+  function encabezado() {
+    let s = '🗺️ GeoBrigada';
+    if (campana.trim()) s += ` · ${campana.trim()}`;
+    s += ` – ${colonia.nombre} · ${nombreActividad}`;
+    if (brigada.trim()) s += ` · ${brigada.trim()}`;
+    return s;
+  }
+
   function compartirWhatsApp(i) {
+    const viv = vivEquipo(i);
     const texto =
-      `🗺️ GeoBrigada – ${colonia.nombre} · ${nombreActividad}\n` +
+      `${encabezado()}\n` +
       `Eres el *Equipo ${i + 1}* de ${equipos.length}. ` +
       `Tu ruta mide ${equipos[i].km.toFixed(1)} km.\n` +
+      (viv > 0 ? `Lleva ~${viv} ${nombreActividad.toLowerCase()} (≈ ${viv} viviendas).\n` : '') +
       `Ábrela aquí y activa tu GPS:\n${link(i)}`;
     window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
   }
 
   // Un solo mensaje con TODOS los links, para mandarlo al grupo de la brigada.
   function compartirTodosWhatsApp() {
-    const lineas = equipos.map(
-      (eq, i) => `*Equipo ${i + 1}* (${eq.km.toFixed(1)} km):\n${link(i)}`
-    );
+    const lineas = equipos.map((eq, i) => {
+      const viv = vivEquipo(i);
+      return (
+        `*Equipo ${i + 1}* (${eq.km.toFixed(1)} km` +
+        (viv > 0 ? `, ~${viv} ${nombreActividad.toLowerCase()}` : '') +
+        `):\n${link(i)}`
+      );
+    });
     const texto =
-      `🗺️ GeoBrigada – ${colonia.nombre} · ${nombreActividad} ` +
-      `(${equipos.length} equipos)\n` +
+      `${encabezado()} (${equipos.length} equipos)\n` +
       `Cada quien abre SOLO el link de su equipo y activa su GPS:\n\n` +
       lineas.join('\n\n');
     window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
@@ -315,7 +371,6 @@ export default function Coordinador() {
         <form onSubmit={buscar} className="fila">
           <input
             type="text"
-            placeholder="Ej. Colonia Ventura Puente"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{ flex: 1, minWidth: '180px' }}
@@ -378,26 +433,44 @@ export default function Coordinador() {
         {colonia && (
           <>
             <h2>2. ¿Qué actividad es y cuántos equipos hay?</h2>
+            {(campana.trim() || brigada.trim()) && (
+              <div className="aviso" style={{ background: '#f0f6ee', borderColor: '#cde3c8' }}>
+                {campana.trim() && <>📣 <strong>{campana.trim()}</strong> · </>}
+                {brigada.trim() && <>👥 {brigada.trim()}</>}
+              </div>
+            )}
             <div className="fila">
               <strong style={{ flex: 1 }}>{colonia.nombre}</strong>
             </div>
+            {colonia.viviendas > 0 && (
+              <div className="aviso" style={{ background: '#eef6ff', borderColor: '#bcd9f5' }}>
+                🏠 Esta colonia tiene <strong>≈ {colonia.viviendas} viviendas</strong>{' '}
+                habitadas (INEGI 2020). Lleva al menos esa cantidad de{' '}
+                {nombreActividad.toLowerCase()} para no quedarte corto.
+              </div>
+            )}
+            <label className="etiqueta">Actividad</label>
             <div className="fila">
               <input
                 type="text"
                 list="lista-actividades"
-                placeholder="Actividad (ej. Folletos)"
                 value={actividad}
                 onChange={(e) => setActividad(e.target.value)}
                 style={{ flex: 1, minWidth: '160px' }}
               />
               <datalist id="lista-actividades">
-                <option value="Folletos" />
-                <option value="Calendarios" />
-                <option value="Volantes" />
-                <option value="Lonas" />
-                <option value="Visita" />
+                {[...new Set([...actividadesGuardadas, 'Folletos', 'Calendarios', 'Visita'])].map(
+                  (a) => (
+                    <option key={a} value={a} />
+                  )
+                )}
               </datalist>
             </div>
+            <p className="nota" style={{ marginTop: 0 }}>
+              Puedes escribir <strong>cualquier</strong> actividad; la app la recuerda
+              para sugerírtela después. Cada actividad lleva su avance y cobertura por
+              separado.
+            </p>
             <div className="fila">
               <input
                 type="number"
@@ -447,6 +520,7 @@ export default function Coordinador() {
                 <strong>Equipo {i + 1}</strong>
                 <div className="datos">
                   {eq.km.toFixed(1)} km · {eq.ruta.length} tramos de calle
+                  {vivEquipo(i) > 0 && <> · 🏠 ≈ {vivEquipo(i)} viviendas</>}
                 </div>
                 <div className="fila">
                   <button className="boton suave mini" onClick={() => copiarLink(i)}>

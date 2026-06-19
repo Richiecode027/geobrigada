@@ -27,6 +27,16 @@ para brigadistas, registro de material repartido.
 - Cada brigada lleva ACTIVIDAD (Folletos, Calendarios, Visita...; param `act`
   del link, default "Reparto"): separa avance, reportes y cobertura de visitas
   repetidas a la misma colonia. La Cobertura filtra por actividad.
+- Jerarquía completa (params del link: camp, act, brig, t): CAMPAÑA (Presidencia,
+  Diputación…) › ACTIVIDAD › BRIGADA (~10, se reparten colonias) › EQUIPOS (parten
+  la colonia). La vista "Brigadas" (src/views/Brigadas.jsx) reparte colonias entre
+  brigadas con src/lib/brigadas.js (greedy ponderado por viviendas INEGI y jornada
+  completo=1/medio=0.5, determinista); el plan se guarda en localStorage. Tocar
+  "Planear ▸" manda la colonia a Planear vía contexto en App.jsx. Cobertura filtra
+  por campaña y actividad.
+- Viviendas por colonia (campo "v" del catálogo): Censo 2020 INEGI cruzado con
+  Marco Geoestadístico por manzana (`node scripts/build-viviendas.mjs`); estima
+  cuánto material llevar por colonia y por equipo (proporcional a km).
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Probar: `npm run dev` y preview en puerto 5180 (.claude/launch.json). GPS

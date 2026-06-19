@@ -82,3 +82,13 @@ create policy "refresca cache calles"
 
 alter table reportes add column if not exists actividad text;
 alter table posiciones add column if not exists actividad text;
+
+-- ---------------------------------------------------------------------------
+-- Campaña y Brigada (jun 2026): la actividad pertenece a una campaña
+-- (Presidencia, Diputación…) y la cubren varias brigadas que se reparten las
+-- colonias. Estas columnas etiquetan cada reporte y posición.
+
+alter table reportes add column if not exists campana text;
+alter table reportes add column if not exists brigada text;
+alter table posiciones add column if not exists campana text;
+alter table posiciones add column if not exists brigada text;

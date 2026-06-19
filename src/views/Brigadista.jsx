@@ -267,6 +267,8 @@ export default function Brigadista({ params }) {
             equipo: params.equipo,
             n_equipos: params.nEquipos,
             actividad: params.actividad,
+            campana: params.campana || null,
+            brigada: params.brigada || null,
             lat: p[0],
             lng: p[1],
             pct: rutaRef.current ? calcularPct(rutaRef.current, cubierto.current) : 0
@@ -330,6 +332,8 @@ export default function Brigadista({ params }) {
       equipo: params.equipo,
       nEquipos: params.nEquipos,
       actividad: params.actividad,
+      campana: params.campana || null,
+      brigada: params.brigada || null,
       km: Math.round(totalKm * 10) / 10,
       porcentaje: pct,
       entregados: n,
@@ -354,8 +358,10 @@ export default function Brigadista({ params }) {
 
     const texto =
       `🗺️ GeoBrigada – Reporte de recorrido\n` +
+      (params.campana ? `Campaña: ${params.campana}\n` : '') +
       `Colonia: ${params.nombre}\n` +
       `Actividad: ${params.actividad}\n` +
+      (params.brigada ? `Brigada: ${params.brigada}\n` : '') +
       `Equipo: ${params.equipo} de ${params.nEquipos}\n` +
       `Fecha: ${new Date().toLocaleString('es-MX')}\n` +
       `Ruta recorrida: ${pct}% (${totalKm.toFixed(1)} km asignados)\n` +
@@ -403,7 +409,10 @@ export default function Brigadista({ params }) {
       <header className="encabezado">
         <h1>🗺️ {params.nombre}</h1>
         <span className="sub">
-          Equipo {params.equipo} de {params.nEquipos} · {params.actividad}
+          {params.campana ? params.campana + ' · ' : ''}
+          {params.actividad}
+          {params.brigada ? ' · ' + params.brigada : ''} · Equipo {params.equipo} de{' '}
+          {params.nEquipos}
         </span>
       </header>
       <div className="contenido">
@@ -489,7 +498,6 @@ export default function Brigadista({ params }) {
                     <input
                       type="number"
                       min="0"
-                      placeholder="0"
                       value={entregados}
                       onChange={(e) => setEntregados(e.target.value)}
                     />
@@ -501,7 +509,6 @@ export default function Brigadista({ params }) {
                   <textarea
                     rows="2"
                     value={notas}
-                    placeholder="Ej. La calle X estaba cerrada"
                     onChange={(e) => setNotas(e.target.value)}
                   />
                   <div className="fila" style={{ marginTop: 10 }}>

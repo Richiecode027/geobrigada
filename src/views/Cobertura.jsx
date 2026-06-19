@@ -3,7 +3,7 @@ import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
 import { cargarReportes } from '../lib/storage.js';
 import { nubeConfigurada, cargarReportesNube } from '../lib/nube.js';
-import { ringsPorClave } from '../lib/colonias.js';
+import { ringsPorClave, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { decodificarPoly } from '../lib/links.js';
@@ -62,11 +62,13 @@ export default function Cobertura() {
 
   const [reportes, setReportes] = useState([]); // todos, nube + locales
   const [filtro, setFiltro] = useState(''); // '' = todas las actividades
+  const [filtroCamp, setFiltroCamp] = useState(''); // '' = todas las campañas
   const [cargando, setCargando] = useState(true);
   const [detalle, setDetalle] = useState(null); // grupo seleccionado
   const [detalleInfo, setDetalleInfo] = useState('');
   const [calculando, setCalculando] = useState(false);
   const [error, setError] = useState('');
+  const [viviendas, setViviendas] = useState({}); // clave de colonia -> viviendas
 
   // --- carga: reportes de la nube + locales ---------------------------------
   useEffect(() => {
@@ -85,24 +87,44 @@ export default function Cobertura() {
     })();
   }, []);
 
-  // Actividades distintas que existen en los reportes (para el filtro).
+  // Carga las viviendas (INEGI) de las colonias que aparecen en los reportes.
+  useEffect(() => {
+    const claves = [...new Set(reportes.map((r) => r.col).filter(Boolean))];
+    (async () => {
+      const m = {};
+      for (const k of claves) {
+        if (viviendas[k] != null) continue;
+        const c = await coloniaPorClave(k);
+        if (c) m[k] = c.v || 0;
+      }
+      if (Object.keys(m).length) setViviendas((prev) => ({ ...prev, ...m }));
+    })();
+  }, [reportes]);
+
+  // Campañas y actividades distintas que existen (para los filtros).
+  const campanas = useMemo(
+    () => [...new Set(reportes.map((r) => r.campana).filter(Boolean))].sort(),
+    [reportes]
+  );
   const actividades = useMemo(
     () => [...new Set(reportes.map((r) => r.actividad || 'Reparto'))].sort(),
     [reportes]
   );
 
-  // Agrupa por colonia, respetando el filtro de actividad.
+  // Agrupa por colonia, respetando los filtros de campaña y actividad.
   const grupos = useMemo(() => {
-    const filtrados = filtro
-      ? reportes.filter((r) => (r.actividad || 'Reparto') === filtro)
-      : reportes;
+    const filtrados = reportes.filter(
+      (r) =>
+        (!filtroCamp || r.campana === filtroCamp) &&
+        (!filtro || (r.actividad || 'Reparto') === filtro)
+    );
     return agrupar(filtrados);
-  }, [reportes, filtro]);
+  }, [reportes, filtro, filtroCamp]);
 
-  // Al cambiar el filtro se cierra el detalle (pertenece a otro conjunto).
+  // Al cambiar un filtro se cierra el detalle (pertenece a otro conjunto).
   useEffect(() => {
     setDetalle(null);
-  }, [filtro]);
+  }, [filtro, filtroCamp]);
 
   // --- pinta los polígonos de las colonias visitadas ------------------------
   useEffect(() => {
@@ -223,6 +245,23 @@ export default function Cobertura() {
 
         {!cargando && reportes.length > 0 && (
           <>
+            {campanas.length > 0 && (
+              <div className="fila">
+                <label style={{ fontSize: '0.88rem' }}>Campaña:</label>
+                <select
+                  value={filtroCamp}
+                  onChange={(e) => setFiltroCamp(e.target.value)}
+                  style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid var(--borde)' }}
+                >
+                  <option value="">Todas las campañas</option>
+                  {campanas.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {actividades.length > 1 && (
               <div className="fila">
                 <label style={{ fontSize: '0.88rem' }}>Actividad:</label>
@@ -274,6 +313,18 @@ export default function Cobertura() {
                   {g.visitas} recorrido(s) · {g.entregados} entregados · última:{' '}
                   {new Date(g.ultimaFecha).toLocaleDateString('es-MX')}
                 </div>
+                {viviendas[g.k] > 0 && (
+                  <div style={{ fontSize: '0.8rem', marginTop: 2 }}>
+                    🏠 {viviendas[g.k]} viviendas
+                    {filtro && g.entregados < viviendas[g.k] ? (
+                      <strong style={{ color: '#c1121f' }}>
+                        {' '}· faltan ~{viviendas[g.k] - g.entregados}
+                      </strong>
+                    ) : filtro ? (
+                      <strong style={{ color: '#2a9d3a' }}> · completa ✓</strong>
+                    ) : null}
+                  </div>
+                )}
               </div>
             ))}
 

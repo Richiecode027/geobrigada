@@ -3,6 +3,9 @@
 
 const KEY_REPORTES = 'geobrigada_reportes';
 const KEY_PROGRESO = 'geobrigada_progreso_'; // + identificador de ruta
+const KEY_ACTIVIDADES = 'geobrigada_actividades';
+const KEY_PLAN = 'geobrigada_plan'; // reparto de colonias entre brigadas
+const KEY_CAMPANAS = 'geobrigada_campanas';
 
 export function cargarReportes() {
   try {
@@ -59,4 +62,59 @@ export function guardarProgreso(claveRuta, progreso) {
 
 export function limpiarProgreso(claveRuta) {
   localStorage.removeItem(KEY_PROGRESO + claveRuta);
+}
+
+// Actividades que el coordinador ha usado (Folletos, Cubetas, Apoyos…): se
+// recuerdan para sugerirlas la próxima vez, en vez de una lista fija.
+export function cargarActividades() {
+  try {
+    return JSON.parse(localStorage.getItem(KEY_ACTIVIDADES)) || [];
+  } catch {
+    return [];
+  }
+}
+
+export function recordarActividad(act) {
+  const a = (act || '').trim();
+  if (!a) return cargarActividades();
+  const lista = cargarActividades().filter(
+    (x) => x.toLowerCase() !== a.toLowerCase()
+  );
+  lista.unshift(a); // la más reciente primero
+  const recortada = lista.slice(0, 30);
+  localStorage.setItem(KEY_ACTIVIDADES, JSON.stringify(recortada));
+  return recortada;
+}
+
+// Campañas usadas (Presidencia, Diputación, Evangélica…): igual que actividades.
+export function cargarCampanas() {
+  try {
+    return JSON.parse(localStorage.getItem(KEY_CAMPANAS)) || [];
+  } catch {
+    return [];
+  }
+}
+
+export function recordarCampana(camp) {
+  const a = (camp || '').trim();
+  if (!a) return cargarCampanas();
+  const lista = cargarCampanas().filter((x) => x.toLowerCase() !== a.toLowerCase());
+  lista.unshift(a);
+  const recortada = lista.slice(0, 30);
+  localStorage.setItem(KEY_CAMPANAS, JSON.stringify(recortada));
+  return recortada;
+}
+
+// Plan de reparto de colonias entre brigadas (vive en el dispositivo del
+// coordinador). Estructura: { campana, actividad, brigadas, pool, asignacion }.
+export function cargarPlan() {
+  try {
+    return JSON.parse(localStorage.getItem(KEY_PLAN)) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function guardarPlan(plan) {
+  localStorage.setItem(KEY_PLAN, JSON.stringify(plan));
 }
