@@ -402,6 +402,7 @@ export default function Coordinador({ contexto }) {
             <div key={i} className="resultado" onClick={() => elegirResultado(r)}>
               <strong>{r.n}</strong> · {r.t}
               {r.cp ? ` · CP ${r.cp}` : ''}
+              {r.v > 0 && <span style={{ color: '#555' }}> · 🏠 {r.v} viv.</span>}
               <span className="badge ok">✓ límites oficiales</span>
             </div>
           ))}

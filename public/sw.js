@@ -8,7 +8,7 @@
 //    día cabe de sobra) y se van borrando los más viejos.
 //  - Supabase y Overpass: siempre red (son datos vivos, no se cachean aquí).
 
-const CACHE_APP = 'gb-app-v1';
+const CACHE_APP = 'gb-app-v2';
 const CACHE_TILES = 'gb-tiles-v1';
 const MAX_TILES = 700;
 
