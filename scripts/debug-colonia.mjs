@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildUnits } from '../src/lib/units.js';
-import { partition, orderRoute, buildAdjacency, puntoDeEncuentro } from '../src/lib/partition.js';
+import { partition, orderRoute, recorridoContinuo, buildAdjacency, puntoDeEncuentro } from '../src/lib/partition.js';
 import { haversine, ringsBounds } from '../src/lib/geo.js';
 
 const nombreBuscado = (process.argv[2] || 'lomas de las americas').toLowerCase();
@@ -117,6 +117,16 @@ grupos.forEach((g, i) => {
     const ini = ruta[j].coords[0];
     saltoMax = Math.max(saltoMax, haversine(fin, ini));
   }
+  // Distancia de "regreso" (deadhead): km que se caminan por calles ya
+  // repartidas para reposicionarse, según el recorrido continuo.
+  const pasos = recorridoContinuo(ruta);
+  let kmCubrir = 0, kmRegreso = 0;
+  for (const p of pasos) {
+    let len = 0;
+    for (let q = 1; q < p.coords.length; q++) len += haversine(p.coords[q - 1], p.coords[q]);
+    if (p.tipo === 'cubrir') kmCubrir += len; else kmRegreso += len;
+  }
+  const pctRegreso = kmCubrir > 0 ? Math.round((100 * kmRegreso) / kmCubrir) : 0;
   // tramos mucho más cerca del corazón de otra zona que del propio (tentáculos)
   let fueraDeLugar = 0;
   for (const u of g) {
@@ -126,6 +136,6 @@ grupos.forEach((g, i) => {
     }
   }
   console.log(
-    `Equipo ${i + 1}: ${km.toFixed(1)} km · ${g.length} tramos · ${piezas} pieza(s) · salto máx ${Math.round(saltoMax)} m · fuera de lugar: ${fueraDeLugar}`
+    `Equipo ${i + 1}: ${km.toFixed(1)} km · ${g.length} tramos · ${piezas} pieza(s) · salto máx ${Math.round(saltoMax)} m · fuera de lugar: ${fueraDeLugar} · regreso ${(kmRegreso / 1000).toFixed(1)} km (${pctRegreso}%)`
   );
 });

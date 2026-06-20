@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { useMap, marcadorInicio, marcadorEncuentro } from '../components/useMap.js';
+import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin, flechasDeRecorrido } from '../components/useMap.js';
 import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
-import { partition, orderRoute, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
+import { partition, orderRoute, recorridoContinuo, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
 import { ringsBounds } from '../lib/geo.js';
 import { linkEquipo } from '../lib/links.js';
 import { cargarActividades, recordarActividad } from '../lib/storage.js';
@@ -282,11 +282,19 @@ export default function Coordinador({ contexto }) {
     if (!equipos) return;
     const g = L.layerGroup().addTo(map);
     equipos.forEach((eq, i) => {
-      // Semitransparentes para que los nombres de las calles se lean debajo.
-      eq.ruta.forEach((u) =>
-        L.polyline(u.coords, { color: eq.color, weight: 5, opacity: 0.5 }).addTo(g)
+      // Recorrido continuo y dirigido de cada equipo: tramos a repartir (sólido)
+      // y conectores de reposicionamiento (punteado), con flechas de sentido.
+      const pasos = recorridoContinuo(eq.ruta);
+      pasos.forEach((p) =>
+        p.tipo === 'cubrir'
+          ? L.polyline(p.coords, { color: eq.color, weight: 5, opacity: 0.5 }).addTo(g)
+          : L.polyline(p.coords, { color: eq.color, weight: 3, opacity: 0.55, dashArray: '2 9' }).addTo(g)
       );
+      const linea = pasos.flatMap((p) => p.coords);
+      flechasDeRecorrido(linea, eq.color, 210).addTo(g);
       marcadorInicio(eq.ruta[0].coords[0], i + 1, eq.color).addTo(g);
+      const fin = linea[linea.length - 1];
+      if (fin) marcadorFin(fin).addTo(g);
     });
     if (encuentro) marcadorEncuentro(encuentro).addTo(g);
     capaEquipos.current = g;

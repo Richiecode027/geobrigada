@@ -353,16 +353,75 @@ export function puntoDeEncuentro(units) {
   return mejor;
 }
 
-// Ordena los tramos de un equipo en un recorrido continuo y caminable.
-// Prefiere SIEMPRE continuar por un tramo conectado al actual (misma calle o
-// esquina); solo cuando se acaba un callejón sin salida "salta" al tramo
-// pendiente más cercano dentro de su propia zona. Determinista.
-// Si se da `inicio` (el punto de encuentro), la ruta arranca desde ahí.
-export function orderRoute(units, inicio = null) {
+// --- grafo de calles compartido (conectores y saltos por la red) -----------
+// Nodo = esquina (clave de coordenada); arista = tramo, caminable en ambos
+// sentidos (también de regreso por una calle ya repartida).
+function grafoDeUnidades(units) {
+  const aristasPorNodo = new Map();
+  units.forEach((u, idx) => {
+    const a = claveCoord(u.coords[0]);
+    const b = claveCoord(u.coords[u.coords.length - 1]);
+    const arista = { a, b, coords: u.coords, len: u.length, name: u.name, unit: idx };
+    if (!aristasPorNodo.has(a)) aristasPorNodo.set(a, []);
+    if (!aristasPorNodo.has(b)) aristasPorNodo.set(b, []);
+    aristasPorNodo.get(a).push(arista);
+    aristasPorNodo.get(b).push(arista);
+  });
+  return aristasPorNodo;
+}
+
+// Distancias caminando por la red desde un nodo a todos los demás (Dijkstra).
+// Si `conPrev` es true, también devuelve de dónde se llegó a cada nodo, para
+// reconstruir el camino. Determinista.
+function dijkstraDesde(grafo, desde, conPrev = false) {
+  const dist = new Map([[desde, 0]]);
+  const prev = conPrev ? new Map() : null;
+  const visto = new Set();
+  while (true) {
+    let u = null, best = Infinity;
+    for (const [n, d] of dist) {
+      if (!visto.has(n) && d < best) { best = d; u = n; }
+    }
+    if (u === null) break;
+    visto.add(u);
+    for (const ar of grafo.get(u) || []) {
+      const v = ar.a === u ? ar.b : ar.a;
+      const nd = best + ar.len;
+      if (nd < (dist.has(v) ? dist.get(v) : Infinity)) {
+        dist.set(v, nd);
+        if (prev) prev.set(v, { from: u, ar });
+      }
+    }
+  }
+  return { dist, prev };
+}
+
+// MÉTODO CODICIOSO (red de seguridad de orderRoute). Recorre encadenando por
+// esquinas; en callejón sin salida salta al tramo con el regreso más corto por
+// la red. Siempre cubre todos los tramos. Determinista. Si se da `inicio`, la
+// ruta arranca desde ahí.
+function ordenCodicioso(units, inicio = null) {
   if (units.length === 0) return [];
   const ady = buildAdjacency(units);
+  const grafo = grafoDeUnidades(units);
   const remaining = new Set(units.map((_, i) => i));
   const route = [];
+
+  // Tramo pendiente más cercano a `curEnd` en línea recta (orienta el tramo).
+  const masCercanoRecto = () => {
+    let next = -1, flip = false, bestD = Infinity;
+    for (const i of remaining) {
+      const a = units[i].coords[0];
+      const b = units[i].coords[units[i].coords.length - 1];
+      const dA = haversine(curEnd, a);
+      const dB = haversine(curEnd, b);
+      const [dMin, flipMin] = dA <= dB ? [dA, false] : [dB, true];
+      if (dMin < bestD - 1e-9 || (Math.abs(dMin - bestD) <= 1e-9 && i < next)) {
+        bestD = dMin; next = i; flip = flipMin;
+      }
+    }
+    return [next, flip];
+  };
 
   let curEnd = inicio;
   let cur = -1;
@@ -382,45 +441,56 @@ export function orderRoute(units, inicio = null) {
   }
 
   while (remaining.size > 0) {
-    // Candidatos: primero los tramos conectados al actual; si no hay
-    // (callejón sin salida o arranque), todos los pendientes de la zona.
-    let candidatos = null;
-    let conectados = false;
+    // Candidatos conectados al tramo actual (misma calle o esquina).
+    const candidatos = [];
     if (cur !== -1) {
-      candidatos = [];
-      for (const v of ady[cur]) {
-        if (remaining.has(v)) candidatos.push(v);
-      }
-      conectados = candidatos.length > 0;
+      for (const v of ady[cur]) if (remaining.has(v)) candidatos.push(v);
     }
-    if (!candidatos || candidatos.length === 0) candidatos = [...remaining];
 
-    // Regla de Warnsdorff: entre los tramos conectados, primero el que tenga
-    // menos continuaciones pendientes (callejones y puntas), para no dejarlos
-    // atrás y tener que regresar. Empata por cercanía y luego por id.
-    let next = -1, flip = false, bestD = Infinity, bestGrado = Infinity;
-    for (const i of candidatos) {
-      // Warnsdorff solo entre tramos conectados; en saltos manda la cercanía.
-      let grado = 0;
-      if (conectados) {
+    let next = -1, flip = false;
+
+    if (candidatos.length > 0) {
+      // Regla de Warnsdorff: primero el conectado con menos continuaciones
+      // pendientes (callejones y puntas), para no dejarlos atrás y regresar.
+      // Empata por cercanía y luego por id.
+      let bestD = Infinity, bestGrado = Infinity;
+      for (const i of candidatos) {
+        let grado = 0;
         for (const v of ady[i]) if (remaining.has(v)) grado++;
+        const a = units[i].coords[0];
+        const b = units[i].coords[units[i].coords.length - 1];
+        const dA = haversine(curEnd, a);
+        const dB = haversine(curEnd, b);
+        const [dMin, flipMin] = dA <= dB ? [dA, false] : [dB, true];
+        if (
+          grado < bestGrado ||
+          (grado === bestGrado &&
+            (dMin < bestD - 1e-9 || (Math.abs(dMin - bestD) <= 1e-9 && i < next)))
+        ) {
+          bestGrado = grado; bestD = dMin; next = i; flip = flipMin;
+        }
       }
-      const a = units[i].coords[0];
-      const b = units[i].coords[units[i].coords.length - 1];
-      const dA = haversine(curEnd, a);
-      const dB = haversine(curEnd, b);
-      const [dMin, flipMin] = dA <= dB ? [dA, false] : [dB, true];
-      if (
-        grado < bestGrado ||
-        (grado === bestGrado &&
-          (dMin < bestD - 1e-9 || (Math.abs(dMin - bestD) <= 1e-9 && i < next)))
-      ) {
-        bestGrado = grado;
-        bestD = dMin;
-        next = i;
-        flip = flipMin;
+    } else if (cur !== -1) {
+      // Callejón sin salida: salta al tramo con el regreso más corto por la red.
+      const { dist } = dijkstraDesde(grafo, claveCoord(curEnd));
+      let bestNet = Infinity;
+      for (const i of remaining) {
+        const a = claveCoord(units[i].coords[0]);
+        const b = claveCoord(units[i].coords[units[i].coords.length - 1]);
+        const da = dist.has(a) ? dist.get(a) : Infinity;
+        const db = dist.has(b) ? dist.get(b) : Infinity;
+        const [dMin, flipMin] = da <= db ? [da, false] : [db, true];
+        if (dMin < bestNet - 1e-9 || (Math.abs(dMin - bestNet) <= 1e-9 && i < next)) {
+          bestNet = dMin; next = i; flip = flipMin;
+        }
       }
+      // Tramo en otra componente (sin calle que lo una): cae a línea recta.
+      if (next === -1 || bestNet === Infinity) [next, flip] = masCercanoRecto();
+    } else {
+      // Arranque con punto de encuentro: el tramo más cercano a él.
+      [next, flip] = masCercanoRecto();
     }
+
     remaining.delete(next);
     const u = units[next];
     const coords = flip ? u.coords.slice().reverse() : u.coords;
@@ -429,6 +499,257 @@ export function orderRoute(units, inicio = null) {
     cur = next;
   }
   return route;
+}
+
+// RUTA DEL CARTERO CHINO (versión simple). Recorre TODAS las calles caminando
+// lo menos posible de más. La idea (ver dibujo en la app): en las esquinas con
+// un número PAR de calles entras y sales sin repetir; las IMPARES (callejones,
+// cruces en T) obligan a repetir. El truco: emparejar las esquinas impares por
+// cercanía y "duplicar" esas pocas calles; así todas quedan pares y existe un
+// recorrido (circuito de Euler) que pasa por todo con el mínimo de repeticiones.
+// Todo determinista (sin azar): cada teléfono calcula la misma ruta.
+function rutaCartero(units, inicio) {
+  const n = units.length;
+  const grafo = grafoDeUnidades(units); // nodo -> [aristas {a,b,len,coords,unit}]
+
+  // Punto de referencia para arrancar (y ordenar piezas sueltas): el de
+  // encuentro o, si no hay, la esquina más al suroeste.
+  let ref = inicio;
+  if (!ref) {
+    for (const u of units) {
+      const e = u.coords[0];
+      if (!ref || e[0] + e[1] < ref[0] + ref[1]) ref = e;
+    }
+  }
+
+  // 1) Componentes conexas (sobre las esquinas, vía las calles requeridas).
+  const compDe = new Map(); // nodo -> id de componente
+  const comps = []; // [{ nodos:Set, unidades:Set }]
+  for (const nodo of grafo.keys()) {
+    if (compDe.has(nodo)) continue;
+    const id = comps.length;
+    const comp = { nodos: new Set(), unidades: new Set() };
+    comps.push(comp);
+    const cola = [nodo];
+    compDe.set(nodo, id);
+    while (cola.length) {
+      const x = cola.pop();
+      comp.nodos.add(x);
+      for (const ar of grafo.get(x) || []) {
+        comp.unidades.add(ar.unit);
+        const y = ar.a === x ? ar.b : ar.a;
+        if (!compDe.has(y)) { compDe.set(y, id); cola.push(y); }
+      }
+    }
+  }
+
+  // Ordena las componentes: primero la más cercana al punto de referencia.
+  const distRefComp = (comp) => {
+    let d = Infinity;
+    for (const nodo of comp.nodos) {
+      const ar = grafo.get(nodo)[0];
+      const p = ar.a === nodo ? ar.coords[0] : ar.coords[ar.coords.length - 1];
+      d = Math.min(d, haversine(ref, p));
+    }
+    return d;
+  };
+  comps.sort((a, b) => distRefComp(a) - distRefComp(b));
+
+  const orden = [];
+
+  for (const comp of comps) {
+    // 2) Grado de cada esquina (número de calles que llegan). Impar = se atora.
+    const grado = new Map();
+    for (const nodo of comp.nodos) grado.set(nodo, (grafo.get(nodo) || []).length);
+    const impares = [...comp.nodos].filter((x) => grado.get(x) % 2 === 1);
+    impares.sort(); // orden estable (determinista)
+
+    // 3) Empareja las impares por cercanía y "duplica" las calles del camino
+    //    más corto entre cada pareja (esas son las que se repiten).
+    const multiplicidad = new Map(); // unit -> nº de veces (1 = sin repetir)
+    for (const u of comp.unidades) multiplicidad.set(u, 1);
+    const pendientes = new Set(impares);
+    while (pendientes.size >= 2) {
+      const a = [...pendientes].sort()[0];
+      pendientes.delete(a);
+      const { dist, prev } = dijkstraDesde(grafo, a, true);
+      // impar más cercana por la red
+      let mejor = null, mejorD = Infinity;
+      for (const b of pendientes) {
+        const d = dist.has(b) ? dist.get(b) : Infinity;
+        if (d < mejorD - 1e-9 || (Math.abs(d - mejorD) <= 1e-9 && (mejor === null || b < mejor))) {
+          mejorD = d; mejor = b;
+        }
+      }
+      if (mejor === null || mejorD === Infinity) continue; // sin pareja alcanzable
+      pendientes.delete(mejor);
+      // duplica las calles del camino a -> mejor
+      let cur = mejor;
+      while (cur !== a) {
+        const p = prev.get(cur);
+        if (!p) break;
+        multiplicidad.set(p.ar.unit, (multiplicidad.get(p.ar.unit) || 1) + 1);
+        cur = p.from;
+      }
+    }
+
+    // 4) Multigrafo con las repeticiones y circuito de Euler (Hierholzer).
+    //    Cada "instancia" de calle es un paso caminable; las copias extra son
+    //    las repeticiones (regreso).
+    const aristas = []; // { a, b, unit, usada, desde }
+    const incid = new Map(); // nodo -> [idArista]
+    const agregar = (a, b, unit) => {
+      const id = aristas.length;
+      aristas.push({ a, b, unit, usada: false, desde: null });
+      if (!incid.has(a)) incid.set(a, []);
+      if (!incid.has(b)) incid.set(b, []);
+      incid.get(a).push(id);
+      incid.get(b).push(id);
+    };
+    for (const unit of comp.unidades) {
+      const u = units[unit];
+      const a = claveCoord(u.coords[0]);
+      const b = claveCoord(u.coords[u.coords.length - 1]);
+      for (let m = 0; m < multiplicidad.get(unit); m++) agregar(a, b, unit);
+    }
+    // Orden estable de las aristas en cada esquina (determinismo de Hierholzer).
+    for (const lista of incid.values()) {
+      lista.sort((i, j) => aristas[i].unit - aristas[j].unit || i - j);
+    }
+
+    // Esquina de arranque: la de la componente más cercana al punto de referencia.
+    let arranque = null, arrD = Infinity;
+    for (const nodo of comp.nodos) {
+      const ar = grafo.get(nodo)[0];
+      const p = ar.a === nodo ? ar.coords[0] : ar.coords[ar.coords.length - 1];
+      const d = haversine(ref, p);
+      if (d < arrD - 1e-9 || (Math.abs(d - arrD) <= 1e-9 && (arranque === null || nodo < arranque))) {
+        arrD = d; arranque = nodo;
+      }
+    }
+
+    const ptr = new Map();
+    const siguienteArista = (nodo) => {
+      const lista = incid.get(nodo) || [];
+      let p = ptr.get(nodo) || 0;
+      while (p < lista.length && aristas[lista[p]].usada) p++;
+      ptr.set(nodo, p);
+      return p < lista.length ? lista[p] : -1;
+    };
+
+    const pilaNodo = [arranque];
+    const pilaArista = [-1];
+    const circuito = []; // ids de arista en orden inverso
+    while (pilaNodo.length) {
+      const v = pilaNodo[pilaNodo.length - 1];
+      const e = siguienteArista(v);
+      if (e !== -1) {
+        aristas[e].usada = true;
+        aristas[e].desde = v;
+        const w = aristas[e].a === v ? aristas[e].b : aristas[e].a;
+        pilaNodo.push(w);
+        pilaArista.push(e);
+      } else {
+        pilaNodo.pop();
+        const e2 = pilaArista.pop();
+        if (e2 !== -1) circuito.push(e2);
+      }
+    }
+    circuito.reverse();
+
+    // 5) Recorre el circuito; la PRIMERA vez que pasa por una calle es "cubrir"
+    //    (queda en el orden, orientada en el sentido de la marcha); las
+    //    siguientes son regreso y las dibuja luego recorridoContinuo.
+    const cubierta = new Set();
+    for (const id of circuito) {
+      const ar = aristas[id];
+      if (cubierta.has(ar.unit)) continue;
+      cubierta.add(ar.unit);
+      const u = units[ar.unit];
+      const coords =
+        claveCoord(u.coords[0]) === ar.desde ? u.coords : u.coords.slice().reverse();
+      orden.push({ ...u, coords });
+    }
+  }
+
+  return orden;
+}
+
+// Ordena los tramos de un equipo en un recorrido caminable y eficiente.
+// Usa la ruta del cartero chino (mínimo de repeticiones); si por un caso
+// degenerado no cubriera todo, cae al método codicioso. Determinista.
+// Si se da `inicio` (el punto de encuentro), la ruta arranca desde ahí.
+export function orderRoute(units, inicio = null) {
+  if (units.length === 0) return [];
+  let orden;
+  try {
+    orden = rutaCartero(units, inicio);
+  } catch {
+    orden = null;
+  }
+  // Red de seguridad: el cartero debe cubrir TODOS los tramos exactamente una
+  // vez; si no, usa el método codicioso (que siempre cubre todo).
+  if (!orden || orden.length !== units.length) return ordenCodicioso(units, inicio);
+  return orden;
+}
+
+// Arma el RECORRIDO CONTINUO que ve el brigadista: toma los tramos ya ordenados
+// por orderRoute y, cuando dos tramos seguidos no se tocan (hay que regresar
+// caminando para seguir), inserta el "conector" — el camino más corto por las
+// calles de la zona entre el fin de uno y el inicio del siguiente. Así el mapa
+// muestra UNA sola línea que se sigue sin pensar: continua = reparte aquí,
+// punteada = solo camina para reposicionarte. Determinista.
+//
+// Devuelve [{ tipo: 'cubrir' | 'conector', coords: [[lat,lng]...], name }].
+export function recorridoContinuo(ordenada) {
+  if (!ordenada || ordenada.length === 0) return [];
+
+  const grafo = grafoDeUnidades(ordenada);
+
+  // Tramos del camino más corto del nodo `desde` al `hasta` (orientados en el
+  // sentido de la marcha), o null si no hay conexión por calle.
+  function caminoMasCorto(desde, hasta) {
+    if (desde === hasta) return [];
+    const { prev } = dijkstraDesde(grafo, desde, true);
+    if (!prev.has(hasta)) return null; // inalcanzable (componente suelta)
+    const pasos = [];
+    let cur = hasta;
+    while (cur !== desde) {
+      const p = prev.get(cur);
+      if (!p) return null;
+      const coords =
+        claveCoord(p.ar.coords[0]) === p.from
+          ? p.ar.coords
+          : p.ar.coords.slice().reverse();
+      pasos.unshift({ coords, name: p.ar.name });
+      cur = p.from;
+    }
+    return pasos;
+  }
+
+  const recorrido = [];
+  ordenada.forEach((u, i) => {
+    if (i > 0) {
+      const prev = ordenada[i - 1];
+      const finPrev = prev.coords[prev.coords.length - 1];
+      const iniAct = u.coords[0];
+      const kFin = claveCoord(finPrev);
+      const kIni = claveCoord(iniAct);
+      if (kFin !== kIni) {
+        const camino = caminoMasCorto(kFin, kIni);
+        if (camino && camino.length) {
+          for (const c of camino) {
+            recorrido.push({ tipo: 'conector', coords: c.coords, name: c.name });
+          }
+        } else {
+          // Sin calle que los una (p. ej. partidos por una plaza): línea recta.
+          recorrido.push({ tipo: 'conector', coords: [finPrev, iniAct], name: '' });
+        }
+      }
+    }
+    recorrido.push({ tipo: 'cubrir', coords: u.coords, name: u.name });
+  });
+  return recorrido;
 }
 
 export const TEAM_COLORS = [
