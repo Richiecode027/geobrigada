@@ -4,7 +4,7 @@ import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin, flechasDeRecorr
 import { ringsPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
-import { partition, orderRoute, recorridoContinuo, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
+import { partition, orderRoute, recorridoContinuo, caminoACalle, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
 import { ringsBounds, haversine, partirTrayectoria } from '../lib/geo.js';
 import { decodificarPoly } from '../lib/links.js';
 import {
@@ -79,21 +79,58 @@ function clasificarVuelta(head, brg) {
     : { icono: '↰', texto: 'Vuelta a la izquierda' };
 }
 
-// Punto pendiente (sin cubrir) más cercano a `p`, con la calle a la que
-// pertenece. Si una calle está cerrada y el brigadista la rodea, el objetivo
-// salta solo al siguiente pendiente alcanzable (no se atora).
-function objetivoPendiente(ruta, cubierto, p) {
-  let mejor = null, mejorD = Infinity;
-  for (let ui = 0; ui < ruta.length; ui++) {
-    const c = cubierto[ui];
-    const coords = ruta[ui].coords;
-    for (let j = 0; j < coords.length; j++) {
-      if (c[j]) continue;
-      const d = haversine(p, coords[j]);
-      if (d < mejorD) { mejorD = d; mejor = { ui, j, punto: coords[j], calle: ruta[ui].name }; }
+// ¿Esta cuadra ya se considera repartida? (la mayoría de sus puntos cubiertos).
+function unidadHecha(cub) {
+  if (!cub.length) return true;
+  return cub.reduce((a, b) => a + b, 0) / cub.length >= 0.7;
+}
+
+// La SIGUIENTE calle a repartir: la primera cuadra sin terminar, buscando hacia
+// adelante desde la cuadra más cercana a tu posición. Si una calle está cerrada
+// y la rodeas, al alejarte deja de ser la más cercana y la guía salta sola a la
+// siguiente alcanzable (no se atora). Devuelve el índice de la cuadra o -1.
+function siguienteCalle(ruta, cubierto, p) {
+  const n = ruta.length;
+  let i0 = 0, d0 = Infinity;
+  for (let ui = 0; ui < n; ui++) {
+    for (const c of ruta[ui].coords) {
+      const d = haversine(p, c);
+      if (d < d0) { d0 = d; i0 = ui; }
     }
   }
-  return mejor;
+  for (let k = 0; k < n; k++) {
+    const ui = (i0 + k) % n;
+    if (!unidadHecha(cubierto[ui])) return ui;
+  }
+  return -1;
+}
+
+// Punto de la cuadra `u` más cercano a `p` (a dónde apunta la flecha).
+function puntoMasCercano(u, p) {
+  let pt = u.coords[0], dd = Infinity;
+  for (const c of u.coords) {
+    const d = haversine(p, c);
+    if (d < dd) { dd = d; pt = c; }
+  }
+  return { punto: pt, dist: dd };
+}
+
+// Punto a `dist` metros de `p` con rumbo `brg` (para encuadrar "adelante de ti").
+function destino(p, brg, dist) {
+  const R = 6371000;
+  const br = (brg * Math.PI) / 180;
+  const la1 = (p[0] * Math.PI) / 180;
+  const lo1 = (p[1] * Math.PI) / 180;
+  const la2 = Math.asin(
+    Math.sin(la1) * Math.cos(dist / R) + Math.cos(la1) * Math.sin(dist / R) * Math.cos(br)
+  );
+  const lo2 =
+    lo1 +
+    Math.atan2(
+      Math.sin(br) * Math.sin(dist / R) * Math.cos(la1),
+      Math.cos(dist / R) - Math.sin(la1) * Math.sin(la2)
+    );
+  return [(la2 * 180) / Math.PI, (lo2 * 180) / Math.PI];
 }
 
 // Trozos consecutivos de `coords` donde la máscara coincide con `valor`. Sirve
@@ -123,7 +160,7 @@ function avanzar(a, b, metros) {
 
 export default function Brigadista({ params }) {
   const mapaRef = useRef(null);
-  const map = useMap(mapaRef);
+  const map = useMap(mapaRef, { rotar: true });
   const capaRuta = useRef(null);
   const capaProgreso = useRef(null);
   const capaGps = useRef(null);
@@ -224,49 +261,27 @@ export default function Brigadista({ params }) {
   // --- dibujar ruta -----------------------------------------------------
   useEffect(() => {
     if (!map || !miRuta) return;
-    if (capaRuta.current) capaRuta.current.remove();
-    const g = L.layerGroup().addTo(map);
-    // Rutas de los otros equipos, tenues, para referencia.
-    otras.forEach((r) =>
-      r.forEach((u) =>
-        L.polyline(u.coords, { color: '#999', weight: 2, opacity: 0.3 }).addTo(g)
-      )
-    );
-    // Recorrido continuo en el orden a caminar: tramos a repartir (sólido) y
-    // conectores para regresar/reposicionarse (punteado). Semitransparente
-    // para que el nombre de la calle se lea debajo.
-    const pasos = recorridoContinuo(miRuta);
-    pasos.forEach((p) =>
-      p.tipo === 'cubrir'
-        ? L.polyline(p.coords, { color, weight: 6, opacity: 0.5 }).addTo(g)
-        : L.polyline(p.coords, { color, weight: 3, opacity: 0.55, dashArray: '2 9' }).addTo(g)
-    );
-    // Flechas de sentido a lo largo de todo el recorrido.
-    const lineaCompleta = pasos.flatMap((p) => p.coords);
-    flechasDeRecorrido(lineaCompleta, color).addTo(g);
-
-    marcadorInicio(miRuta[0].coords[0], params.equipo, color).addTo(g);
-    if (encuentro) marcadorEncuentro(encuentro).addTo(g);
-    const fin = lineaCompleta[lineaCompleta.length - 1];
-    if (fin) marcadorFin(fin).addTo(g);
-    capaRuta.current = g;
-    // Recorrido previo restaurado (si recargó la página a media caminata).
-    dibujarTrack();
+    dibujarBase();
+    dibujarTrack(); // recorrido previo restaurado (si recargó a media caminata)
     pintarProgreso();
   }, [map, miRuta]);
 
-  // --- cámara según el modo: 'territorio' encuadra toda la zona; 'ruta' se
-  //     centra en ti (y luego el GPS la va siguiendo). --------------------
+  // --- cámara según el modo: 'territorio' encuadra toda la zona; 'ruta' es la
+  //     vista guiada que te sigue (acercada y, al caminar, rotando como Waze).
   useEffect(() => {
     modoVistaRef.current = modoVista;
     if (!map || !miRuta) return;
-    if (modoVista === 'ruta' && posActual.current) {
-      map.setView(posActual.current, 17);
+    dibujarBase();
+    pintarProgreso();
+    if (modoVista === 'ruta') {
+      map.invalidateSize(); // el tamaño pudo cambiar al aparecer el letrero
+      if (posActual.current) seguirCamara(posActual.current);
+      else map.setView(miRuta[0].coords[0], 17);
     } else {
+      if (map.setBearing) map.setBearing(0); // norte arriba en la vista de todo
       const todos = miRuta.flatMap((u) => u.coords);
       map.fitBounds(ringsBounds([todos]), { padding: [20, 20] });
     }
-    pintarProgreso();
   }, [modoVista, map, miRuta]);
 
   function cambiarModo(m) {
@@ -274,46 +289,119 @@ export default function Brigadista({ params }) {
     setModoVista(m);
   }
 
-  // Ilumina el avance (lo ya hecho, en gris, punto por punto) y —en vista
-  // guiada— resalta el siguiente tramo con una flecha grande hacia él.
+  // Base del mapa. En 'territorio' se ve TODA la ruta (para planear y rodear
+  // calles cerradas); en 'ruta' la base queda limpia: solo se verá lo gris (ya
+  // hecho) y la calle siguiente resaltada (las pinta pintarProgreso).
+  function dibujarBase() {
+    if (!map || !miRuta) return;
+    if (capaRuta.current) capaRuta.current.remove();
+    const g = L.layerGroup().addTo(map);
+    if (modoVistaRef.current === 'territorio') {
+      otras.forEach((r) =>
+        r.forEach((u) =>
+          L.polyline(u.coords, { color: '#999', weight: 2, opacity: 0.3 }).addTo(g)
+        )
+      );
+      const pasos = recorridoContinuo(miRuta);
+      pasos.forEach((p) =>
+        p.tipo === 'cubrir'
+          ? L.polyline(p.coords, { color, weight: 6, opacity: 0.5 }).addTo(g)
+          : L.polyline(p.coords, { color, weight: 3, opacity: 0.55, dashArray: '2 9' }).addTo(g)
+      );
+      const linea = pasos.flatMap((p) => p.coords);
+      flechasDeRecorrido(linea, color).addTo(g);
+      marcadorInicio(miRuta[0].coords[0], params.equipo, color).addTo(g);
+      if (encuentro) marcadorEncuentro(encuentro).addTo(g);
+      const fin = linea[linea.length - 1];
+      if (fin) marcadorFin(fin).addTo(g);
+    }
+    capaRuta.current = g;
+  }
+
+  // Ilumina el avance y —en vista guiada— resalta SOLO la calle siguiente.
   function pintarProgreso() {
     if (!map || !rutaRef.current) return;
     if (capaProgreso.current) capaProgreso.current.remove();
     const g = L.layerGroup().addTo(map);
-    // Lo ya recorrido, apagado (gris): crece poquito a poquito al caminar.
+    const guiado = modoVistaRef.current === 'ruta';
+
+    // En vista guiada, marca DOS calles: el camino para llegar (punteado) y la
+    // calle que sigue a repartir (sólida y gruesa).
+    let objUi = -1;
+    if (guiado && posActual.current) {
+      objUi = siguienteCalle(rutaRef.current, cubierto.current, posActual.current);
+      if (objUi >= 0) {
+        const u = rutaRef.current[objUi];
+        // 1) Camino para llegar: "ve por aquí" (punteado, desde tu posición hasta
+        //    donde empieza la calle a repartir). Si está pegada, va directo a su esquina.
+        const camino = caminoACalle(rutaRef.current, posActual.current, objUi);
+        let wayPts;
+        if (camino.length) {
+          wayPts = [posActual.current, ...camino.flat()];
+        } else {
+          const e1 = u.coords[0];
+          const e2 = u.coords[u.coords.length - 1];
+          const esquina =
+            haversine(posActual.current, e1) <= haversine(posActual.current, e2) ? e1 : e2;
+          wayPts = [posActual.current, esquina];
+        }
+        if (wayPts.length > 1) {
+          L.polyline(wayPts, {
+            color,
+            weight: 5,
+            opacity: 0.85,
+            dashArray: '3 9',
+            lineCap: 'round'
+          }).addTo(g);
+        }
+        // 2) Calle a repartir: "esta repartes" (sólida con contorno blanco).
+        L.polyline(u.coords, { color: '#fff', weight: 13, opacity: 0.95 }).addTo(g);
+        L.polyline(u.coords, { color, weight: 8, opacity: 1 }).addTo(g);
+      }
+    }
+    // Lo ya recorrido, gris, punto por punto. Va ENCIMA para que la calle
+    // siguiente se vaya poniendo gris conforme la caminas.
     rutaRef.current.forEach((u, ui) => {
       for (const run of trozosPorMascara(u.coords, cubierto.current[ui], true)) {
-        L.polyline(run, { color: '#9aa3ab', weight: 6, opacity: 0.9 }).addTo(g);
+        L.polyline(run, { color: '#9aa3ab', weight: guiado ? 8 : 6, opacity: 0.95 }).addTo(g);
       }
     });
-    if (modoVistaRef.current === 'ruta' && posActual.current) {
-      const obj = objetivoPendiente(rutaRef.current, cubierto.current, posActual.current);
-      if (obj) {
-        // Resalta la parte pendiente de la calle objetivo (lo que sigue AHORA).
-        const u = rutaRef.current[obj.ui];
-        for (const run of trozosPorMascara(u.coords, cubierto.current[obj.ui], false)) {
-          L.polyline(run, { color: '#fff', weight: 11, opacity: 0.9 }).addTo(g);
-          L.polyline(run, { color, weight: 6, opacity: 1 }).addTo(g);
-        }
-        // Flecha grande, justo delante de ti, apuntando a dónde ir.
-        const ang = rumbo(posActual.current, obj.punto);
-        L.marker(avanzar(posActual.current, obj.punto, 14), {
-          interactive: false,
-          keyboard: false,
-          zIndexOffset: 1100,
-          icon: L.divIcon({
-            className: 'flecha-grande',
-            html: `<div style="transform:rotate(${ang}deg);color:${color}">▲</div>`,
-            iconSize: [40, 40],
-            iconAnchor: [20, 20]
-          })
-        }).addTo(g);
-      }
+    // Flecha grande hacia la calle siguiente. Solo cuando el mapa NO rota (modo
+    // de respaldo): con el mapa girado hacia adelante, la orientación ya guía y
+    // una flecha encima confundiría.
+    if (guiado && objUi >= 0 && posActual.current && !map.setBearing) {
+      const { punto } = puntoMasCercano(rutaRef.current[objUi], posActual.current);
+      const ang = rumbo(posActual.current, punto);
+      L.marker(avanzar(posActual.current, punto, 14), {
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 1100,
+        icon: L.divIcon({
+          className: 'flecha-grande',
+          html: `<div style="transform:rotate(${ang}deg);color:${color}">▲</div>`,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20]
+        })
+      }).addTo(g);
     }
     capaProgreso.current = g;
   }
 
-  // Rumbo reciente de la caminata (un punto ~18 m atrás), para decir la vuelta.
+  // Cámara estilo Waze: rota el mapa hacia donde caminas y te coloca en el
+  // tercio inferior para ver lo que viene adelante.
+  function seguirCamara(p) {
+    if (!map) return;
+    const z = Math.max(map.getZoom() || 0, 17);
+    const head = rumboReciente();
+    if (map.setBearing && head != null) {
+      map.setBearing(-head); // gira el mapa para que "adelante" quede arriba
+      map.setView(destino(p, head, 70), z, { animate: true, duration: 0.6 });
+    } else {
+      map.setView(p, z, { animate: true, duration: 0.6 });
+    }
+  }
+
+  // Rumbo reciente de la caminata (un punto ~18 m atrás), para rotar y decir la vuelta.
   function rumboReciente() {
     const t = track.current;
     if (t.length < 2) return null;
@@ -324,16 +412,24 @@ export default function Brigadista({ params }) {
     return rumbo(t[0], fin);
   }
 
-  // Actualiza el letrero de indicación (calle siguiente, distancia y vuelta).
+  // Actualiza el letrero (calle siguiente, distancia y vuelta). La vuelta se
+  // calcula con el PRIMER paso del camino para llegar (no la línea recta).
   function actualizarGuia(p) {
     if (!rutaRef.current) return;
-    const obj = objetivoPendiente(rutaRef.current, cubierto.current, p);
-    if (!obj) { setGuia({ fin: true }); return; }
+    const objUi = siguienteCalle(rutaRef.current, cubierto.current, p);
+    if (objUi < 0) { setGuia({ fin: true }); return; }
+    const u = rutaRef.current[objUi];
+    const { punto, dist } = puntoMasCercano(u, p);
+    const wayPts = [...caminoACalle(rutaRef.current, p, objUi).flat(), punto];
+    let rumboObjetivo = rumbo(p, punto);
+    for (const q of wayPts) {
+      if (haversine(p, q) >= 12) { rumboObjetivo = rumbo(p, q); break; }
+    }
     const head = rumboReciente();
     setGuia({
-      calle: obj.calle,
-      dist: Math.round(haversine(p, obj.punto)),
-      vuelta: head == null ? null : clasificarVuelta(head, rumbo(p, obj.punto))
+      calle: u.name,
+      dist: Math.round(dist),
+      vuelta: head == null ? null : clasificarVuelta(head, rumboObjetivo)
     });
   }
 
@@ -442,8 +538,8 @@ export default function Brigadista({ params }) {
         actualizarGuia(p);
 
         if (!map) return;
-        // En vista guiada, la cámara te sigue.
-        if (modoVistaRef.current === 'ruta') map.panTo(p, { animate: true, duration: 0.6 });
+        // En vista guiada, la cámara te sigue y rota hacia donde caminas.
+        if (modoVistaRef.current === 'ruta') seguirCamara(p);
         if (capaGps.current) capaGps.current.remove();
         const g = L.layerGroup().addTo(map);
         L.circle(p, { radius: pos.coords.accuracy, color: '#1d6fd1', weight: 1, fillOpacity: 0.1 }).addTo(g);
@@ -464,8 +560,11 @@ export default function Brigadista({ params }) {
   }
 
   function centrarEnMi() {
-    const ultimo = track.current[track.current.length - 1];
-    if (ultimo && map) map.setView(ultimo, 17);
+    const ultimo = posActual.current || track.current[track.current.length - 1];
+    if (!ultimo || !map) return;
+    map.invalidateSize();
+    if (modoVistaRef.current === 'ruta') seguirCamara(ultimo);
+    else map.setView(ultimo, 17);
   }
 
   // --- avance por calle (automático, según el GPS) -------------------------
@@ -667,11 +766,11 @@ export default function Brigadista({ params }) {
               </p>
 
               <p className="nota">
-                👉 Sigue la <strong>flecha grande</strong> y el letrero de arriba.
-                Lo que ya caminaste se pone <strong>gris</strong> solo, conforme
-                avanzas. Si una calle está cerrada o es privada, toca{' '}
-                <strong>«Ver todo mi territorio»</strong> para rodearla y seguir: el
-                sistema continúa con lo que falta.
+                👉 El mapa gira hacia donde caminas. La línea <strong>punteada</strong>
+                es el camino para llegar; la <strong>sólida y gruesa</strong> es la
+                calle que toca repartir. Lo que terminas se pone <strong>gris</strong>{' '}
+                solo y se enciende la que sigue. Si una calle está cerrada o es
+                privada, toca <strong>«Ver todo mi territorio»</strong> para rodearla.
               </p>
 
               <h3>Tus calles</h3>

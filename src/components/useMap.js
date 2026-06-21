@@ -1,14 +1,25 @@
 import { useEffect, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet-rotate';
 import { haversine } from '../lib/geo.js';
 
 // Centro de Morelia (Catedral)
 const MORELIA = [19.7036, -101.1928];
 
-export function useMap(containerRef) {
+export function useMap(containerRef, opciones = {}) {
   const [map, setMap] = useState(null);
+  const rotar = !!opciones.rotar;
   useEffect(() => {
-    const m = L.map(containerRef.current, { zoomControl: true }).setView(MORELIA, 13);
+    // `rotate` (plugin leaflet-rotate) solo se activa para la vista guiada del
+    // brigadista; las demás vistas siguen con el norte siempre arriba.
+    const m = L.map(containerRef.current, {
+      zoomControl: true,
+      rotate: rotar,
+      rotateControl: false,
+      touchRotate: false,
+      shiftKeyRotate: false,
+      bearing: 0
+    }).setView(MORELIA, 13);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
       maxZoom: 19

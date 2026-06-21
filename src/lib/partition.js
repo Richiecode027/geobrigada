@@ -752,6 +752,48 @@ export function recorridoContinuo(ordenada) {
   return recorrido;
 }
 
+// Camino más corto por las calles del equipo desde el punto `desde` (tu GPS)
+// hasta la cuadra `uiDestino` (la siguiente a repartir). Sirve para mostrarle
+// al brigadista "ve por aquí" cuando la calle que sigue no está pegada a él.
+// Devuelve los tramos a caminar para llegar (cada uno [[lat,lng]...]),
+// orientados en el sentido de la marcha. Determinista.
+export function caminoACalle(ruta, desde, uiDestino) {
+  if (!ruta || ruta.length === 0 || uiDestino < 0 || uiDestino >= ruta.length) return [];
+  const grafo = grafoDeUnidades(ruta);
+
+  // Esquina más cercana a tu posición (arranque del camino).
+  let inicio = null, dIni = Infinity;
+  for (const u of ruta) {
+    const a = u.coords[0], b = u.coords[u.coords.length - 1];
+    const da = haversine(desde, a);
+    if (da < dIni) { dIni = da; inicio = claveCoord(a); }
+    const db = haversine(desde, b);
+    if (db < dIni) { dIni = db; inicio = claveCoord(b); }
+  }
+  if (inicio == null) return [];
+
+  const dest = ruta[uiDestino];
+  const t1 = claveCoord(dest.coords[0]);
+  const t2 = claveCoord(dest.coords[dest.coords.length - 1]);
+  const { dist, prev } = dijkstraDesde(grafo, inicio, true);
+  const d1 = inicio === t1 ? 0 : dist.has(t1) ? dist.get(t1) : Infinity;
+  const d2 = inicio === t2 ? 0 : dist.has(t2) ? dist.get(t2) : Infinity;
+  if (!isFinite(Math.min(d1, d2))) return []; // calle destino inalcanzable por la red
+  const meta = d1 <= d2 ? t1 : t2;
+
+  const pasos = [];
+  let cur = meta;
+  while (cur !== inicio) {
+    const p = prev.get(cur);
+    if (!p) break;
+    const coords =
+      claveCoord(p.ar.coords[0]) === p.from ? p.ar.coords : p.ar.coords.slice().reverse();
+    pasos.unshift(coords);
+    cur = p.from;
+  }
+  return pasos;
+}
+
 export const TEAM_COLORS = [
   '#e63946', '#1d6fd1', '#2a9d3a', '#ff8c00',
   '#8338ec', '#00a8a8', '#d81b9c', '#7a5230'
