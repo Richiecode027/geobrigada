@@ -38,6 +38,11 @@ export default function Coordinador({ contexto }) {
   const [copiado, setCopiado] = useState(-1);
   const [miUbicacion, setMiUbicacion] = useState(null);
   const [gpsError, setGpsError] = useState('');
+  // En el teléfono, mientras se busca se oculta el mapa: así la lista de
+  // resultados usa toda la pantalla y no queda aplastada por el teclado.
+  const [buscadorEnfocado, setBuscadorEnfocado] = useState(false);
+  const busquedaActiva =
+    buscadorEnfocado || Boolean(resultados && resultados.length > 0);
 
   // --- búsqueda (catálogo local de 866 colonias de Morelia) ---------------
   async function buscar(e) {
@@ -194,6 +199,17 @@ export default function Coordinador({ contexto }) {
     capaColonia.current = g;
     map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
   }, [map, colonia]);
+
+  // Al cerrar la búsqueda el mapa reaparece: se le avisa a Leaflet que cambió
+  // de tamaño y se reencuadra la colonia (si hay una elegida).
+  useEffect(() => {
+    if (!map || busquedaActiva) return;
+    const tid = setTimeout(() => {
+      map.invalidateSize();
+      if (colonia) map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
+    }, 80);
+    return () => clearTimeout(tid);
+  }, [map, busquedaActiva]);
 
   // --- mi ubicación (para saber hacia dónde caminar a la colonia) ----------
   function activarMiUbicacion() {
@@ -372,7 +388,7 @@ export default function Coordinador({ contexto }) {
 
   // --- render ---------------------------------------------------------------
   return (
-    <div className="contenido">
+    <div className={'contenido' + (busquedaActiva ? ' busqueda-activa' : '')}>
       <div className="mapa" ref={mapaRef} />
       <div className="panel">
         <h2>1. Busca la colonia</h2>
@@ -381,6 +397,13 @@ export default function Coordinador({ contexto }) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onFocus={(e) => {
+              setBuscadorEnfocado(true);
+              // Sube el buscador hasta arriba para que la lista quede a la vista.
+              const el = e.target;
+              setTimeout(() => el.scrollIntoView({ block: 'start', behavior: 'smooth' }), 150);
+            }}
+            onBlur={() => setBuscadorEnfocado(false)}
             style={{ flex: 1, minWidth: '180px' }}
           />
           <button className="boton" disabled={buscando}>

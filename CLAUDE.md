@@ -10,7 +10,11 @@ para brigadistas, registro de material repartido.
   Math.random): los links de brigadista dependen de que cada teléfono recalcule
   la misma división. No introducir aleatoriedad ni reordenamientos no estables.
 - Catálogo de colonias: `public/colonias_morelia.json`, generado por
-  `node scripts/build-colonias.mjs` (límites oficiales INEGI DCAH 2023).
+  `node scripts/build-colonias.mjs` (límites oficiales INEGI DCAH 2024,
+  archivo nacional): 926 polígonos = 715 colonias con nombre + 211 "Zona NNNN
+  (sin nombre oficial)" (delimitadas por IMPLAN sin nombre; ~15 mil viviendas).
+  El DCAH solo cubre la ciudad (localidad 0001): tenencias fuera. Al cambiar
+  el catálogo hay que subir la versión del caché en public/sw.js.
   La búsqueda por nombre es local; las calles vienen de Overpass en runtime
   (consulta por bbox + recorte local en src/lib/units.js, NO por poly).
 - EN PRODUCCIÓN: https://geobrigada.netlify.app — Netlify construye y publica

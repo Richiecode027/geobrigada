@@ -50,6 +50,13 @@ body {
   .mapa { order: 2; }
 }
 
+/* Búsqueda en el teléfono: mientras se escribe se oculta el mapa para que la
+   lista de resultados use toda la pantalla (el teclado tapa la mitad de abajo). */
+@media (max-width: 899px) {
+  .contenido.busqueda-activa .mapa { display: none; }
+  .contenido.busqueda-activa .panel { max-height: none; }
+}
+
 .mapa { flex: 1; min-height: 40dvh; }
 
 .panel {

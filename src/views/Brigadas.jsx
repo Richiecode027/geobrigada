@@ -40,6 +40,13 @@ export default function Brigadas({ onPlanear }) {
   const [resultados, setResultados] = useState(null);
   const [campanasG] = useState(cargarCampanas());
   const [actividadesG] = useState(cargarActividades());
+  // En el teléfono, mientras se busca se oculta el mapa: así la lista de
+  // resultados usa toda la pantalla y no queda aplastada por el teclado.
+  const [buscadorEnfocado, setBuscadorEnfocado] = useState(false);
+  const busquedaActiva =
+    buscadorEnfocado || Boolean(resultados && resultados.length > 0);
+  // Último encuadre del mapa, para restaurarlo cuando reaparece tras buscar.
+  const ultimoEncuadre = useRef(null);
 
   // Guarda el plan cada vez que cambia algo.
   useEffect(() => {
@@ -140,15 +147,31 @@ export default function Brigadas({ onPlanear }) {
           bounds.push(...r);
         });
       }
-      if (bounds.length) map.fitBounds(ringsBounds([bounds]), { padding: [25, 25] });
+      if (bounds.length) {
+        ultimoEncuadre.current = ringsBounds([bounds]);
+        map.fitBounds(ultimoEncuadre.current, { padding: [25, 25] });
+      }
     })();
     capa.current = g;
   }, [map, pool, asignacion, brigadas]);
 
+  // Al cerrar la búsqueda el mapa reaparece: se le avisa a Leaflet que cambió
+  // de tamaño y se restaura el encuadre de las colonias.
+  useEffect(() => {
+    if (!map || busquedaActiva) return;
+    const tid = setTimeout(() => {
+      map.invalidateSize();
+      if (ultimoEncuadre.current) {
+        map.fitBounds(ultimoEncuadre.current, { padding: [25, 25] });
+      }
+    }, 80);
+    return () => clearTimeout(tid);
+  }, [map, busquedaActiva]);
+
   const totalViv = pool.reduce((s, c) => s + vivColonia(c), 0);
 
   return (
-    <div className="contenido">
+    <div className={'contenido' + (busquedaActiva ? ' busqueda-activa' : '')}>
       <div className="mapa" ref={mapaRef} />
       <div className="panel">
         <h2>Reparto de colonias entre brigadas</h2>
@@ -225,6 +248,13 @@ export default function Brigadas({ onPlanear }) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onFocus={(e) => {
+            setBuscadorEnfocado(true);
+            // Sube el buscador hasta arriba para que la lista quede a la vista.
+            const el = e.target;
+            setTimeout(() => el.scrollIntoView({ block: 'start', behavior: 'smooth' }), 150);
+          }}
+          onBlur={() => setBuscadorEnfocado(false)}
         />
         {resultados &&
           resultados.map((r) => (

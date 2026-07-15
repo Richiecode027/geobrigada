@@ -1,8 +1,9 @@
 // Genera public/colonias_morelia.json con los límites OFICIALES de colonias
 // del programa DCAH de INEGI (delimitados por el IMPLAN de Morelia).
 //
-// Fuente: INEGI, Delimitación de Colonias y otros Asentamientos Humanos 2023.
-// https://www.inegi.org.mx/programas/dcah/
+// Fuente: INEGI, Delimitación de Colonias y otros Asentamientos Humanos 2024
+// (archivo nacional; la edición 2024 trae 926 asentamientos para Morelia
+// contra 715 de la 2023). https://www.inegi.org.mx/programas/dcah/
 //
 // Se corre una sola vez (o cuando INEGI publique una actualización):
 //   node scripts/build-colonias.mjs
@@ -16,11 +17,11 @@ import { simplifyRing } from '../src/lib/geo.js';
 
 const TEMP = process.env.TEMP || '/tmp';
 const ZIP_URL =
-  'https://www.inegi.org.mx/contenidos/productos/prod_serv/contenidos/espanol/bvinegi/productos/geografia/delimitaciones/794551104538/16_michoacandeocampo.zip';
-const ZIP = path.join(TEMP, 'dcah_mich.zip');
-const DIR = path.join(TEMP, 'dcah_mich');
-const SHP = path.join(DIR, 'conjunto_de_datos', '16as.shp');
-const DBF = path.join(DIR, 'conjunto_de_datos', '16as.dbf');
+  'https://www.inegi.org.mx/contenidos/productos/prod_serv/contenidos/espanol/bvinegi/productos/geografia/delimitaciones/794551132180_s.zip';
+const ZIP = path.join(TEMP, 'dcah2024.zip');
+const DIR = path.join(TEMP, 'dcah2024');
+const SHP = path.join(DIR, 'conjunto_de_datos', '00as.shp');
+const DBF = path.join(DIR, 'conjunto_de_datos', '00as.dbf');
 
 // Proyección de INEGI (del archivo .prj) → coordenadas GPS (WGS84)
 const LCC_INEGI =
@@ -61,11 +62,12 @@ while (true) {
   const r = await src.read();
   if (r.done) break;
   const p = r.value.properties;
-  if (p.CVE_MUN !== '053') continue; // solo Morelia
-  if (!p.NOM_ASEN || p.NOM_ASEN === 'NINGUNO') {
-    descartadas++;
-    continue;
-  }
+  if (p.CVE_ENT !== '16' || p.CVE_MUN !== '053') continue; // solo Morelia, Michoacán
+  // Zonas delimitadas por el IMPLAN pero SIN nombre oficial (NOM_ASEN =
+  // "NINGUNO"): son ~211 espacios urbanos reales (con calles y casas) que
+  // antes se descartaban. Se incluyen con un nombre generado para poderlas
+  // buscar, repartir y planear como cualquier colonia.
+  const sinNombre = !p.NOM_ASEN || p.NOM_ASEN === 'NINGUNO';
 
   const g = r.value.geometry;
   const partes =
@@ -89,7 +91,10 @@ while (true) {
   }
 
   const k = p.CVEGEO;
-  colonias.push({ k, n: titulo(p.NOM_ASEN), t: titulo(p.TIPO), cp: p.CP !== '00000' ? p.CP : '' });
+  const nombre = sinNombre
+    ? 'Zona ' + k.slice(-4) + ' (sin nombre oficial)'
+    : titulo(p.NOM_ASEN);
+  colonias.push({ k, n: nombre, t: titulo(p.TIPO), cp: p.CP !== '00000' ? p.CP : '' });
   polys[k] = rings;
 }
 
@@ -97,7 +102,7 @@ colonias.sort((a, b) => a.n.localeCompare(b.n, 'es'));
 
 const salida = {
   generado: new Date().toISOString().slice(0, 10),
-  fuente: 'INEGI DCAH 2023 (límites oficiales, IMPLAN Morelia)',
+  fuente: 'INEGI DCAH 2024 (límites oficiales, IMPLAN Morelia)',
   colonias,
   polys
 };
