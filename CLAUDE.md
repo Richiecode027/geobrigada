@@ -9,14 +9,25 @@ para brigadistas, registro de material repartido.
 - La división de rutas (src/lib/partition.js) DEBE ser determinista (sin
   Math.random): los links de brigadista dependen de que cada teléfono recalcule
   la misma división. No introducir aleatoriedad ni reordenamientos no estables.
-- Catálogo de colonias: `public/colonias_morelia.json`, generado por
-  `node scripts/build-colonias.mjs` (límites oficiales INEGI DCAH 2024,
-  archivo nacional): 926 polígonos = 715 colonias con nombre + 211 "Zona NNNN
-  (sin nombre oficial)" (delimitadas por IMPLAN sin nombre; ~15 mil viviendas).
-  El DCAH solo cubre la ciudad (localidad 0001): tenencias fuera. Al cambiar
-  el catálogo hay que subir la versión del caché en public/sw.js.
+- Catálogo de colonias: `public/colonias_morelia.json`, 934 polígonos armados
+  en 3 pasos (correr en orden tras una actualización del INEGI):
+    1. `node scripts/build-colonias.mjs` — límites oficiales INEGI DCAH 2024
+       (archivo nacional): 926 zonas = 715 colonias con nombre + 211 "Zona
+       NNNN (sin nombre oficial)" (delimitadas por IMPLAN sin nombre).
+    2. `node scripts/build-viviendas.mjs` — cruza Censo 2020 x Marco
+       Geoestadístico por manzana, escribe el campo "v" (viviendas) de cada
+       zona del paso 1.
+    3. `node scripts/build-tenencias.mjs` — el DCAH solo cubre la ciudad
+       (localidad 0001); las tenencias (Capula, Morelos, Jesús del Monte...)
+       quedan fuera. Este paso agrupa por localidad las manzanas del Marco
+       Geoestadístico que NO caen en ninguna zona del catálogo, suelda sus
+       polígonos con turf (buffer+union+erode, tolerante a que estén
+       separados por calles) y las agrega como zonas tipo "Tenencia" con
+       viviendas reales del censo. Suma 8 tenencias, ~934 zonas totales.
+  Al cambiar el catálogo hay que subir la versión del caché en public/sw.js.
   La búsqueda por nombre es local; las calles vienen de Overpass en runtime
-  (consulta por bbox + recorte local en src/lib/units.js, NO por poly).
+  (consulta por bbox + recorte local en src/lib/units.js, NO por poly) —
+  ya probado con Capula (calles reales, rutas generadas sin problema).
 - EN PRODUCCIÓN: https://geobrigada.netlify.app — Netlify construye y publica
   solo con cada push a `master` de github.com/Richiecode027/geobrigada.
   Publicar un cambio = commit + `git push`. No usar Netlify Drop.
@@ -38,9 +49,6 @@ para brigadistas, registro de material repartido.
   completo=1/medio=0.5, determinista); el plan se guarda en localStorage. Tocar
   "Planear ▸" manda la colonia a Planear vía contexto en App.jsx. Cobertura filtra
   por campaña y actividad.
-- Viviendas por colonia (campo "v" del catálogo): Censo 2020 INEGI cruzado con
-  Marco Geoestadístico por manzana (`node scripts/build-viviendas.mjs`); estima
-  cuánto material llevar por colonia y por equipo (proporcional a km).
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Probar: `npm run dev` y preview en puerto 5180 (.claude/launch.json). GPS
