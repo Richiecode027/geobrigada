@@ -395,6 +395,7 @@ export default function Coordinador({ contexto }) {
         <form onSubmit={buscar} className="fila">
           <input
             type="text"
+            autoComplete="off"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={(e) => {
@@ -485,6 +486,7 @@ export default function Coordinador({ contexto }) {
             <div className="fila">
               <input
                 type="text"
+                autoComplete="off"
                 list="lista-actividades"
                 value={actividad}
                 onChange={(e) => setActividad(e.target.value)}

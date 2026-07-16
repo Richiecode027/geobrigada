@@ -805,6 +805,7 @@ export default function Brigadista({ params }) {
                   <div className="fila">
                     <input
                       type="number"
+                      autoComplete="off"
                       min="0"
                       value={entregados}
                       onChange={(e) => setEntregados(e.target.value)}

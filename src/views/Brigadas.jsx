@@ -179,6 +179,7 @@ export default function Brigadas({ onPlanear }) {
         <label className="etiqueta">Campaña</label>
         <input
           type="text"
+          autoComplete="off"
           list="lista-campanas"
           value={campana}
           onChange={(e) => setCampana(e.target.value)}
@@ -192,6 +193,7 @@ export default function Brigadas({ onPlanear }) {
         <label className="etiqueta">Actividad</label>
         <input
           type="text"
+          autoComplete="off"
           list="lista-actividades-brig"
           value={actividad}
           onChange={(e) => setActividad(e.target.value)}
@@ -213,6 +215,7 @@ export default function Brigadas({ onPlanear }) {
             />
             <input
               type="text"
+              autoComplete="off"
               value={b.nombre}
               onChange={(e) => cambiarBrigada(b.id, 'nombre', e.target.value)}
               style={{ flex: 1, minWidth: 90 }}
@@ -246,6 +249,7 @@ export default function Brigadas({ onPlanear }) {
         <label className="etiqueta">Buscar colonia para agregar</label>
         <input
           type="text"
+          autoComplete="off"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={(e) => {
