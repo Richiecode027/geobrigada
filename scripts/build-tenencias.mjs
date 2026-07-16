@@ -165,7 +165,20 @@ while (true) {
 
 // --- suelda las manzanas de cada localidad en un contorno y lo agrega ------
 console.log('Soldando manzanas por localidad…');
-let agregadas = 0, vivAgregadas = 0;
+
+// Convierte una colonia del catálogo ([lat,lng]) a un polígono turf ([lon,lat]),
+// cerrando el anillo (primer punto = último) solo si hiciera falta.
+function cerrar(coords) {
+  const a = coords[0], b = coords[coords.length - 1];
+  return a[0] === b[0] && a[1] === b[1] ? coords : [...coords, a];
+}
+function aTurfPoly(k) {
+  return turf.multiPolygon(
+    catalogo.polys[k].map((r) => [cerrar(r.map(([lat, lng]) => [lng, lat]))])
+  );
+}
+
+let agregadas = 0, vivAgregadas = 0, recortadas = 0;
 const omitidas = [];
 for (const [loc, { viviendas, manzanas }] of porLoc) {
   const nombre = nombrePorLoc.get(loc) || ('Localidad ' + loc);
@@ -176,8 +189,30 @@ for (const [loc, { viviendas, manzanas }] of porLoc) {
     agrandadas.length === 1
       ? agrandadas[0]
       : turf.union(turf.featureCollection(agrandadas));
-  const encogido = turf.buffer(unido, -SOLDADURA_M, { units: 'meters' });
+  let encogido = turf.buffer(unido, -SOLDADURA_M, { units: 'meters' });
   if (!encogido) { omitidas.push(`${nombre} (geometría inválida al encoger)`); continue; }
+
+  // El "soldado" (agrandar y encoger) puede inflarse un poco hacia el borde de
+  // una colonia vecina ya existente: se recorta cualquier traslape para que
+  // nunca queden dos zonas pisándose en el mapa.
+  const [minLng, minLat, maxLng, maxLat] = turf.bbox(encogido);
+  const vecinas = catalogo.colonias.filter((c) => {
+    const b = bbox[c.k];
+    return b && !(maxLat < b[0] || minLat > b[2] || maxLng < b[1] || minLng > b[3]);
+  });
+  if (vecinas.length > 0) {
+    const poligonosVecinos = vecinas.map((c) => aTurfPoly(c.k));
+    const unionVecinas =
+      poligonosVecinos.length === 1
+        ? poligonosVecinos[0]
+        : turf.union(turf.featureCollection(poligonosVecinos));
+    const areaAntes = turf.area(encogido);
+    const recortado = turf.difference(turf.featureCollection([encogido, unionVecinas]));
+    if (recortado) {
+      if (turf.area(recortado) < areaAntes - 1) recortadas++; // sí quitó algo real
+      encogido = recortado;
+    }
+  }
 
   // Extrae los anillos exteriores (una localidad puede quedar en varias
   // piezas si sus manzanas están repartidas en grupos separados).
@@ -210,6 +245,7 @@ fs.writeFileSync('public/colonias_morelia.json', JSON.stringify(catalogo));
 const kb = Math.round(fs.statSync('public/colonias_morelia.json').size / 1024);
 console.log('--------------------------------------------------');
 console.log(`Tenencias agregadas: ${agregadas} · viviendas: ${Math.round(vivAgregadas)}`);
+console.log(`Recortadas por traslape con una colonia vecina: ${recortadas}`);
 if (omitidas.length) console.log(`Omitidas (menos de ${MIN_VIVIENDAS} viviendas o sin geometría): ${omitidas.join(', ')}`);
 console.log(`Catálogo total: ${catalogo.colonias.length} zonas`);
 console.log(`Archivo: public/colonias_morelia.json (${kb} KB)`);
