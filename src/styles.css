@@ -57,6 +57,36 @@ body {
   .contenido.busqueda-activa .panel { max-height: none; }
 }
 
+/* Asa para plegar/desplegar el panel (solo tiene sentido en el teléfono,
+   donde el panel le quita la mitad de la pantalla al mapa). */
+.asa-panel {
+  display: none;
+  width: 100%;
+  border: 0;
+  background: #fff;
+  color: var(--azul);
+  font-size: 0.85rem;
+  padding: 4px 0 8px;
+  cursor: pointer;
+  position: sticky;
+  top: -12px; /* compensa el padding del panel para pegarse al borde */
+  margin-top: -6px;
+  z-index: 5;
+}
+.asa-barrita {
+  display: block;
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: #c9d3dd;
+  margin: 0 auto 6px;
+}
+@media (max-width: 899px) {
+  .asa-panel { display: block; }
+  /* Plegado: solo se ve el asa; el mapa se queda con toda la pantalla */
+  .panel.plegado > :not(.asa-panel) { display: none; }
+}
+
 .mapa { flex: 1; min-height: 40dvh; }
 
 .panel {

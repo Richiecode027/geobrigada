@@ -43,6 +43,9 @@ export default function Coordinador({ contexto }) {
   const [buscadorEnfocado, setBuscadorEnfocado] = useState(false);
   const busquedaActiva =
     buscadorEnfocado || Boolean(resultados && resultados.length > 0);
+  // En el teléfono el panel se puede plegar (queda solo el asa) para ver el
+  // mapa casi a pantalla completa.
+  const [panelPlegado, setPanelPlegado] = useState(false);
 
   // --- búsqueda (catálogo local de 866 colonias de Morelia) ---------------
   async function buscar(e) {
@@ -200,8 +203,8 @@ export default function Coordinador({ contexto }) {
     map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
   }, [map, colonia]);
 
-  // Al cerrar la búsqueda el mapa reaparece: se le avisa a Leaflet que cambió
-  // de tamaño y se reencuadra la colonia (si hay una elegida).
+  // Al cerrar la búsqueda o plegar/abrir el panel el mapa cambia de tamaño:
+  // se le avisa a Leaflet y se reencuadra la colonia (si hay una elegida).
   useEffect(() => {
     if (!map || busquedaActiva) return;
     const tid = setTimeout(() => {
@@ -209,7 +212,7 @@ export default function Coordinador({ contexto }) {
       if (colonia) map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
     }, 80);
     return () => clearTimeout(tid);
-  }, [map, busquedaActiva]);
+  }, [map, busquedaActiva, panelPlegado]);
 
   // --- mi ubicación (para saber hacia dónde caminar a la colonia) ----------
   function activarMiUbicacion() {
@@ -390,7 +393,16 @@ export default function Coordinador({ contexto }) {
   return (
     <div className={'contenido' + (busquedaActiva ? ' busqueda-activa' : '')}>
       <div className="mapa" ref={mapaRef} />
-      <div className="panel">
+      <div className={'panel' + (panelPlegado ? ' plegado' : '')}>
+        {/* Asa (solo en el teléfono): pliega el panel para ver el mapa grande */}
+        <button
+          type="button"
+          className="asa-panel"
+          onClick={() => setPanelPlegado(!panelPlegado)}
+        >
+          <span className="asa-barrita" />
+          {panelPlegado ? '▲ Mostrar panel' : '▼ Ocultar panel'}
+        </button>
         <h2>1. Busca la colonia</h2>
         <form onSubmit={buscar} className="fila">
           <input
