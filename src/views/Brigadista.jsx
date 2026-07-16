@@ -21,6 +21,7 @@ import {
   subirPosicion
 } from '../lib/nube.js';
 import { compartirGPX } from '../lib/gpx.js';
+import { iniciarGPS } from '../lib/gps.js';
 
 // Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
 const RADIO_CUBIERTO_M = 30;
@@ -165,7 +166,7 @@ export default function Brigadista({ params }) {
   const capaProgreso = useRef(null);
   const capaGps = useRef(null);
   const capaTrack = useRef(null);
-  const watchId = useRef(null);
+  const detenerGps = useRef(null); // función que apaga la fuente de GPS activa
   const track = useRef([]);
   const wakeLock = useRef(null);
   const ultimaPosSubida = useRef(0);
@@ -254,7 +255,7 @@ export default function Brigadista({ params }) {
       }
     })();
     return () => {
-      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+      if (detenerGps.current) detenerGps.current();
     };
   }, []);
 
@@ -476,16 +477,14 @@ export default function Brigadista({ params }) {
   }, [gpsActivo]);
 
   // --- GPS ----------------------------------------------------------------
+  // La fuente real vive en lib/gps.js: watchPosition en el navegador, plugin
+  // de segundo plano dentro del APK (sigue registrando con pantalla apagada).
   function activarGPS() {
-    if (!('geolocation' in navigator)) {
-      setGpsError('Este navegador no tiene GPS disponible.');
-      return;
-    }
     setGpsError('');
     cambiarModo('ruta'); // al empezar a caminar, entra a la vista guiada
-    watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const p = [pos.coords.latitude, pos.coords.longitude];
+    detenerGps.current = iniciarGPS(
+      (punto) => {
+        const p = [punto.lat, punto.lng];
         setGpsActivo(true);
 
         // guarda el recorrido real (un punto cada ~15 m)
@@ -542,20 +541,15 @@ export default function Brigadista({ params }) {
         if (modoVistaRef.current === 'ruta') seguirCamara(p);
         if (capaGps.current) capaGps.current.remove();
         const g = L.layerGroup().addTo(map);
-        L.circle(p, { radius: pos.coords.accuracy, color: '#1d6fd1', weight: 1, fillOpacity: 0.1 }).addTo(g);
+        L.circle(p, { radius: punto.precision, color: '#1d6fd1', weight: 1, fillOpacity: 0.1 }).addTo(g);
         L.circleMarker(p, { radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1 }).addTo(g);
         capaGps.current = g;
         if (seMovio) dibujarTrack();
       },
-      (err) => {
-        setGpsError(
-          'No se pudo obtener tu ubicación. Revisa permisos de ubicación del navegador. (' +
-            err.message +
-            ')'
-        );
+      (mensaje) => {
+        setGpsError(mensaje);
         setGpsActivo(false);
-      },
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+      }
     );
   }
 
@@ -584,9 +578,9 @@ export default function Brigadista({ params }) {
   // --- cierre ---------------------------------------------------------------
   function terminarRecorrido() {
     // Se apaga el GPS y se libera la pantalla: el recorrido ya terminó.
-    if (watchId.current !== null) {
-      navigator.geolocation.clearWatch(watchId.current);
-      watchId.current = null;
+    if (detenerGps.current) {
+      detenerGps.current();
+      detenerGps.current = null;
     }
     setGpsActivo(false);
 

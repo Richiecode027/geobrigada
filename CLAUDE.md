@@ -58,8 +58,13 @@ para brigadistas, registro de material repartido.
   usa el Java de Android Studio (configurado en ~/.gradle/gradle.properties;
   el Java del PATH es 1.8 y no sirve) y el SDK de
   %LOCALAPPDATA%/Android/Sdk (android/local.properties, no se commitea).
-  Íconos/splash del APK: `node scripts/gen-iconos-android.mjs`. El manifest ya
-  pide permisos de ubicación. Pendiente: plugin de GPS en segundo plano.
+  Íconos/splash del APK: `node scripts/gen-iconos-android.mjs`. GPS: fuente
+  única en src/lib/gps.js — navegador usa watchPosition, APK usa
+  @capacitor-community/background-geolocation (sigue con pantalla apagada,
+  notificación persistente; useLegacyBridge y CapacitorHttp activados en
+  capacitor.config.json para que ni el GPS ni las subidas a Supabase se
+  congelen a los 5 min en segundo plano). Pendiente: OTA de la capa web con
+  @capgo/capacitor-updater (zip en Netlify) — ver conversación 15 jul 2026.
 - Probar: `npm run dev` y preview en puerto 5180 (.claude/launch.json). GPS
   requiere HTTPS (`npm run dev:movil` para probar desde teléfono en LAN).
   Algoritmo: `node scripts/test-rutas.mjs` y

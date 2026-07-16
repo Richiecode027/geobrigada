@@ -3,6 +3,12 @@
   "appName": "GeoBrigada",
   "webDir": "dist",
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": false,
+    "useLegacyBridge": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }
