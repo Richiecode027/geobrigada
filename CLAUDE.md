@@ -51,6 +51,15 @@ para brigadistas, registro de material repartido.
   por campaña y actividad.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
+- Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA
+  app React envuelta en cáscara nativa, carpeta `android/` +
+  capacitor.config.json. Compilar: `npm run apk` (hace vite build + cap sync +
+  gradle); sale en android/app/build/outputs/apk/debug/app-debug.apk. Gradle
+  usa el Java de Android Studio (configurado en ~/.gradle/gradle.properties;
+  el Java del PATH es 1.8 y no sirve) y el SDK de
+  %LOCALAPPDATA%/Android/Sdk (android/local.properties, no se commitea).
+  Íconos/splash del APK: `node scripts/gen-iconos-android.mjs`. El manifest ya
+  pide permisos de ubicación. Pendiente: plugin de GPS en segundo plano.
 - Probar: `npm run dev` y preview en puerto 5180 (.claude/launch.json). GPS
   requiere HTTPS (`npm run dev:movil` para probar desde teléfono en LAN).
   Algoritmo: `node scripts/test-rutas.mjs` y

@@ -1,0 +1,8 @@
+{
+  "appId": "com.geobrigada.app",
+  "appName": "GeoBrigada",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}

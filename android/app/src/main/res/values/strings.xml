@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GeoBrigada</string>
+    <string name="title_activity_main">GeoBrigada</string>
+    <string name="package_name">com.geobrigada.app</string>
+    <string name="custom_url_scheme">com.geobrigada.app</string>
+</resources>
