@@ -45,6 +45,9 @@ export default function Brigadas({ onPlanear }) {
   const [buscadorEnfocado, setBuscadorEnfocado] = useState(false);
   const busquedaActiva =
     buscadorEnfocado || Boolean(resultados && resultados.length > 0);
+  // Avisa a la segunda mitad del encuadre (más abajo) que hay un encuadre
+  // nuevo por aplicar, aunque el mapa esté oculto en ese momento.
+  const [encuadreVersion, setEncuadreVersion] = useState(0);
   // Último encuadre del mapa, para restaurarlo cuando reaparece tras buscar.
   const ultimoEncuadre = useRef(null);
 
@@ -149,24 +152,26 @@ export default function Brigadas({ onPlanear }) {
       }
       if (bounds.length) {
         ultimoEncuadre.current = ringsBounds([bounds]);
-        map.fitBounds(ultimoEncuadre.current, { padding: [25, 25] });
+        setEncuadreVersion((v) => v + 1);
       }
     })();
     capa.current = g;
   }, [map, pool, asignacion, brigadas]);
 
-  // Al cerrar la búsqueda el mapa reaparece: se le avisa a Leaflet que cambió
-  // de tamaño y se restaura el encuadre de las colonias.
+  // Encuadra las colonias del pool. Espera a que el mapa esté VISIBLE (no
+  // oculto por el buscador) y le avisa a Leaflet el tamaño real del
+  // contenedor antes de calcular el zoom: si no, usa un tamaño guardado en
+  // caché de cuando estaba oculto y el encuadre sale mal. Sin animación:
+  // justo al reaparecer, la animación de zoom de Leaflet alcanza a calcular
+  // el encuadre con un zoom todavía en transición y sale mal.
   useEffect(() => {
-    if (!map || busquedaActiva) return;
+    if (!map || busquedaActiva || !ultimoEncuadre.current) return;
     const tid = setTimeout(() => {
-      map.invalidateSize();
-      if (ultimoEncuadre.current) {
-        map.fitBounds(ultimoEncuadre.current, { padding: [25, 25] });
-      }
+      map.invalidateSize({ animate: false });
+      map.fitBounds(ultimoEncuadre.current, { padding: [25, 25], animate: false });
     }, 80);
     return () => clearTimeout(tid);
-  }, [map, busquedaActiva]);
+  }, [map, busquedaActiva, encuadreVersion]);
 
   const totalViv = pool.reduce((s, c) => s + vivColonia(c), 0);
 

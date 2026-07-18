@@ -200,19 +200,22 @@ export default function Coordinador({ contexto }) {
       }).addTo(g)
     );
     capaColonia.current = g;
-    map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
   }, [map, colonia]);
 
-  // Al cerrar la búsqueda o plegar/abrir el panel el mapa cambia de tamaño:
-  // se le avisa a Leaflet y se reencuadra la colonia (si hay una elegida).
+  // Encuadra la colonia elegida. Espera a que el mapa esté VISIBLE (no oculto
+  // por el buscador ni por el panel plegado) y le avisa a Leaflet el tamaño
+  // real del contenedor antes de calcular el zoom: si no, usa un tamaño
+  // guardado en caché de cuando estaba oculto y el encuadre sale mal. Sin
+  // animación: justo al reaparecer, la animación de zoom de Leaflet alcanza
+  // a calcular el encuadre con un zoom todavía en transición y sale mal.
   useEffect(() => {
-    if (!map || busquedaActiva) return;
+    if (!map || !colonia || busquedaActiva) return;
     const tid = setTimeout(() => {
-      map.invalidateSize();
-      if (colonia) map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20] });
+      map.invalidateSize({ animate: false });
+      map.fitBounds(ringsBounds(colonia.rings), { padding: [20, 20], animate: false });
     }, 80);
     return () => clearTimeout(tid);
-  }, [map, busquedaActiva, panelPlegado]);
+  }, [map, colonia, busquedaActiva, panelPlegado]);
 
   // --- mi ubicación (para saber hacia dónde caminar a la colonia) ----------
   function activarMiUbicacion() {
