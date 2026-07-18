@@ -156,13 +156,16 @@ export async function cargarPosiciones(minutos = 30) {
 
 const CACHE_CALLES_DIAS = 30;
 
-export async function leerCallesNube(clave) {
+// maxDias = null lee la copia aunque esté vieja (salvavidas cuando OSM falla).
+export async function leerCallesNube(clave, maxDias = CACHE_CALLES_DIAS) {
   if (!nubeConfigurada()) return null;
   try {
-    const desde = new Date(Date.now() - CACHE_CALLES_DIAS * 86400000).toISOString();
+    const filtroFecha = maxDias
+      ? `&actualizado=gte.${new Date(Date.now() - maxDias * 86400000).toISOString()}`
+      : '';
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/calles_cache?clave=eq.${encodeURIComponent(clave)}` +
-        `&actualizado=gte.${desde}&select=ways`,
+        `${filtroFecha}&select=ways`,
       { headers: cabeceras() }
     );
     if (!res.ok) return null;

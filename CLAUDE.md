@@ -28,6 +28,11 @@ para brigadistas, registro de material repartido.
   La búsqueda por nombre es local; las calles vienen de Overpass en runtime
   (consulta por bbox + recorte local en src/lib/units.js, NO por poly) —
   ya probado con Capula (calles reales, rutas generadas sin problema).
+  La consulta/clave de caché vive en src/lib/calles-query.js (compartida por
+  la app y por scripts/precargar-calles.mjs, que sube las calles de las 934
+  zonas al caché de Supabase para que los teléfonos no dependan de Overpass;
+  correrlo de nuevo si cambia la consulta o el catálogo). Si Overpass falla,
+  la app usa como salvavidas el caché vencido (local o nube).
 - EN PRODUCCIÓN: https://geobrigada.netlify.app — Netlify construye y publica
   solo con cada push a `master` de github.com/Richiecode027/geobrigada.
   Publicar un cambio = commit + `git push`. No usar Netlify Drop.
