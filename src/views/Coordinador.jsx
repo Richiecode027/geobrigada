@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin, flechasDeRecorrido } from '../components/useMap.js';
+import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin } from '../components/useMap.js';
 import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
@@ -304,18 +304,18 @@ export default function Coordinador({ contexto }) {
     if (!equipos) return;
     const g = L.layerGroup().addTo(map);
     equipos.forEach((eq, i) => {
-      // Recorrido continuo y dirigido de cada equipo: tramos a repartir (sólido)
-      // y conectores de reposicionamiento (punteado), con flechas de sentido.
+      // Recorrido continuo de cada equipo: tramos a repartir (sólido) y
+      // conectores de reposicionamiento (punteado). Con varios equipos a la
+      // vez las flechas de sentido se amontonaban y no se entendían; se quitan
+      // aquí (el brigadista sí las ve, una a la vez, en su propio teléfono).
       const pasos = recorridoContinuo(eq.ruta);
       pasos.forEach((p) =>
         p.tipo === 'cubrir'
           ? L.polyline(p.coords, { color: eq.color, weight: 5, opacity: 0.5 }).addTo(g)
           : L.polyline(p.coords, { color: eq.color, weight: 3, opacity: 0.55, dashArray: '2 9' }).addTo(g)
       );
-      const linea = pasos.flatMap((p) => p.coords);
-      flechasDeRecorrido(linea, eq.color, 210).addTo(g);
       marcadorInicio(eq.ruta[0].coords[0], i + 1, eq.color).addTo(g);
-      const fin = linea[linea.length - 1];
+      const fin = pasos[pasos.length - 1]?.coords.slice(-1)[0];
       if (fin) marcadorFin(fin).addTo(g);
     });
     if (encuentro) marcadorEncuentro(encuentro).addTo(g);
