@@ -11,7 +11,9 @@ import {
   guardarReporte,
   cargarProgreso,
   guardarProgreso,
-  limpiarProgreso
+  limpiarProgreso,
+  guardarRutaActiva,
+  borrarRutaActiva
 } from '../lib/storage.js';
 import {
   nubeConfigurada,
@@ -281,6 +283,10 @@ export default function Brigadista({ params }) {
             /* si falla, el brigadista sigue con lo que ya tenía guardado localmente */
           }
         }
+
+        // Se recuerda para volver aquí si Android reconstruye la pantalla
+        // desde cero (ver App.jsx); se borra al terminar el recorrido.
+        guardarRutaActiva(params);
 
         setEncuentro(inicio);
         setMiRuta(mia);
@@ -656,6 +662,7 @@ export default function Brigadista({ params }) {
     };
     guardarReporte(reporte);
     limpiarProgreso(claveRuta);
+    borrarRutaActiva();
 
     // Sube el reporte a la nube; sin señal, queda en cola y se reintenta solo.
     if (nubeConfigurada()) {

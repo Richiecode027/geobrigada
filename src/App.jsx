@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { leerParametros } from './lib/links.js';
+import { cargarRutaActiva } from './lib/storage.js';
 import Coordinador from './views/Coordinador.jsx';
 import Brigadas from './views/Brigadas.jsx';
 import Brigadista from './views/Brigadista.jsx';
@@ -26,8 +27,13 @@ export default function App() {
     return () => window.removeEventListener('geobrigada:link', alCambiarLink);
   }, []);
 
-  // Si el link trae equipo asignado (?t=...), es un brigadista.
-  const params = leerParametros();
+  // Si el link trae equipo asignado (?t=...), es un brigadista. Dentro del
+  // APK, Android a veces reconstruye la pantalla desde cero (para liberar
+  // memoria) aunque el GPS de fondo siga vivo; ahí la URL pierde los
+  // parámetros, así que si no vienen en el link se usa la última ruta que
+  // quedó en curso (ver guardarRutaActiva en Brigadista.jsx).
+  const paramsLink = leerParametros();
+  const params = paramsLink || cargarRutaActiva();
   const [tab, setTab] = useState('coordinador');
   // Contexto que la vista Brigadas pasa a Planear al tocar "Planear ▸" en una
   // colonia: lleva la colonia y las etiquetas (campaña, actividad, brigada).
@@ -37,7 +43,9 @@ export default function App() {
   // cambian los parámetros del link (otro equipo u otra colonia): sin esto,
   // reutiliza la misma pantalla y se queda con la ruta y el GPS del link
   // anterior — solo el título se vería actualizado.
-  if (params) return <Brigadista key={window.location.search} params={params} />;
+  if (params) {
+    return <Brigadista key={paramsLink ? window.location.search : 'ruta-activa'} params={params} />;
+  }
 
   function planearColonia(contexto) {
     setContextoPlanear({ ...contexto, sello: Date.now() });

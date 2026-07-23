@@ -6,6 +6,31 @@ const KEY_PROGRESO = 'geobrigada_progreso_'; // + identificador de ruta
 const KEY_ACTIVIDADES = 'geobrigada_actividades';
 const KEY_PLAN = 'geobrigada_plan'; // reparto de colonias entre brigadas
 const KEY_CAMPANAS = 'geobrigada_campanas';
+const KEY_RUTA_ACTIVA = 'geobrigada_ruta_activa';
+
+// Recuerda en qué ruta va el brigadista (dentro del APK, Android a veces
+// reconstruye la pantalla desde cero para liberar memoria, aunque el GPS de
+// fondo siga vivo; sin esto, al reabrir se vería la pantalla de Planear en
+// vez de la ruta). Se borra al terminar el recorrido (ver Brigadista.jsx).
+export function guardarRutaActiva(params) {
+  try {
+    localStorage.setItem(KEY_RUTA_ACTIVA, JSON.stringify(params));
+  } catch {
+    /* si falla, el brigadista puede volver a tocar su link de WhatsApp */
+  }
+}
+
+export function cargarRutaActiva() {
+  try {
+    return JSON.parse(localStorage.getItem(KEY_RUTA_ACTIVA));
+  } catch {
+    return null;
+  }
+}
+
+export function borrarRutaActiva() {
+  localStorage.removeItem(KEY_RUTA_ACTIVA);
+}
 
 export function cargarReportes() {
   try {
