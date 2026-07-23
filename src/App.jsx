@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { leerParametros } from './lib/links.js';
 import Coordinador from './views/Coordinador.jsx';
 import Brigadas from './views/Brigadas.jsx';
@@ -16,6 +16,16 @@ const TABS = [
 ];
 
 export default function App() {
+  // Dentro del APK, tocar otro link de brigadista con la app ya abierta
+  // (main.jsx) avisa aquí en vez de recargar la página: se fuerza a releer
+  // los parámetros de la URL, que main.jsx ya actualizó.
+  const [, releerLink] = useState(0);
+  useEffect(() => {
+    const alCambiarLink = () => releerLink((n) => n + 1);
+    window.addEventListener('geobrigada:link', alCambiarLink);
+    return () => window.removeEventListener('geobrigada:link', alCambiarLink);
+  }, []);
+
   // Si el link trae equipo asignado (?t=...), es un brigadista.
   const params = leerParametros();
   const [tab, setTab] = useState('coordinador');
@@ -23,7 +33,11 @@ export default function App() {
   // colonia: lleva la colonia y las etiquetas (campaña, actividad, brigada).
   const [contextoPlanear, setContextoPlanear] = useState(null);
 
-  if (params) return <Brigadista params={params} />;
+  // La "key" fuerza a React a desmontar y volver a montar Brigadista cuando
+  // cambian los parámetros del link (otro equipo u otra colonia): sin esto,
+  // reutiliza la misma pantalla y se queda con la ruta y el GPS del link
+  // anterior — solo el título se vería actualizado.
+  if (params) return <Brigadista key={window.location.search} params={params} />;
 
   function planearColonia(contexto) {
     setContextoPlanear({ ...contexto, sello: Date.now() });
