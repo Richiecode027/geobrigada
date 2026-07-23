@@ -21,7 +21,7 @@ import {
   subirPosicion
 } from '../lib/nube.js';
 import { compartirGPX } from '../lib/gpx.js';
-import { iniciarGPS } from '../lib/gps.js';
+import { iniciarGPS, esApk } from '../lib/gps.js';
 
 // Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
 const RADIO_CUBIERTO_M = 30;
@@ -194,6 +194,10 @@ export default function Brigadista({ params }) {
   const [pct, setPct] = useState(0);
   const [gpsActivo, setGpsActivo] = useState(false);
   const [gpsError, setGpsError] = useState('');
+  // true si la última vez el GPS se quedó activo y nunca se apagó a mano
+  // (dentro del APK: seguramente quitaron la app de Recientes a medio
+  // camino, lo que mata el registro de golpe — ver lib/gps.js).
+  const [interrumpido, setInterrumpido] = useState(false);
   // 'territorio' = ves toda tu zona · 'ruta' = vista guiada que te sigue.
   const [modoVista, setModoVista] = useState('territorio');
   const [guia, setGuia] = useState(null); // indicación del letrero al caminar
@@ -236,6 +240,7 @@ export default function Brigadista({ params }) {
         // Restaura el avance guardado (sobrevive si se recarga la página).
         const prog = cargarProgreso(claveRuta);
         if (Array.isArray(prog.track)) track.current = prog.track;
+        if (prog.gpsActivo) setInterrumpido(true);
         cubierto.current = mia.map((u, ui) => {
           const c = Array.isArray(prog.cubierto) ? prog.cubierto[ui] : null;
           return Array.isArray(c) && c.length === u.coords.length
@@ -481,7 +486,16 @@ export default function Brigadista({ params }) {
   // de segundo plano dentro del APK (sigue registrando con pantalla apagada).
   function activarGPS() {
     setGpsError('');
+    setInterrumpido(false);
     cambiarModo('ruta'); // al empezar a caminar, entra a la vista guiada
+    // Se marca "activo" de una vez (no solo cuando se detecta movimiento o
+    // avance): si el teléfono está quieto un momento y ahí se cierra la app,
+    // igual debe notarse al reabrir que el registro se cortó a medio camino.
+    guardarProgreso(claveRuta, {
+      track: track.current,
+      cubierto: cubierto.current,
+      gpsActivo: true
+    });
     detenerGps.current = iniciarGPS(
       (punto) => {
         const p = [punto.lat, punto.lng];
@@ -509,7 +523,11 @@ export default function Brigadista({ params }) {
         if (cambio || seMovio) {
           guardarProgreso(claveRuta, {
             track: track.current,
-            cubierto: cubierto.current
+            cubierto: cubierto.current,
+            // Si la app se cierra a medio camino (p. ej. la quitan de
+            // Recientes), este valor se queda en "true": al reabrir se
+            // avisa que el registro se cortó (ver useEffect de arriba).
+            gpsActivo: true
           });
         }
 
@@ -715,12 +733,22 @@ export default function Brigadista({ params }) {
                 </div>
               )}
 
+              {interrumpido && !gpsActivo && (
+                <div className="aviso">
+                  ⚠️ Tu registro se cortó (seguramente cerraste la app). Tu
+                  avance no se perdió — toca «Activar mi GPS» para seguir.
+                </div>
+              )}
               <div className="fila">
                 <button
                   className={gpsActivo ? 'boton exito' : 'boton primario'}
                   onClick={gpsActivo ? centrarEnMi : activarGPS}
                 >
-                  {gpsActivo ? '📍 Centrar en mí' : '📡 Activar mi GPS'}
+                  {gpsActivo
+                    ? '📍 Centrar en mí'
+                    : interrumpido
+                    ? '📡 Reanudar mi GPS'
+                    : '📡 Activar mi GPS'}
                 </button>
                 <span style={{ fontSize: '0.85rem', color: '#555' }}>
                   {totalKm.toFixed(1)} km · {calles.length} calles
@@ -737,7 +765,14 @@ export default function Brigadista({ params }) {
                 </button>
               </div>
               {gpsError && <div className="error">{gpsError}</div>}
-              {gpsActivo && (
+              {gpsActivo && esApk && (
+                <p className="nota">
+                  🔆 Puedes apagar la pantalla, seguirá registrando.{' '}
+                  <strong>No quites GeoBrigada de Recientes</strong> (el
+                  cuadrito de apps abiertas): eso sí corta el registro.
+                </p>
+              )}
+              {gpsActivo && !esApk && (
                 <p className="nota">
                   🔆 La pantalla se mantendrá encendida mientras recorres, para no
                   perder tu rastro. <strong>No bloquees el teléfono</strong>: si lo
