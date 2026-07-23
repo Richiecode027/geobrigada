@@ -6,6 +6,17 @@
 // Como el algoritmo es determinista, el teléfono del brigadista recalcula la
 // misma división de rutas que generó el coordinador, sin necesidad de servidor.
 
+import { Capacitor } from '@capacitor/core';
+
+// Dentro del APK, la app carga su código empaquetado desde una dirección
+// interna del teléfono (no desde internet); si el coordinador comparte un
+// link generado ahí, debe apuntar siempre al sitio real, no a esa dirección.
+const URL_PRODUCCION = 'https://geobrigada.netlify.app';
+
+function origenLink() {
+  return Capacitor.isNativePlatform() ? URL_PRODUCCION : window.location.origin;
+}
+
 export function codificarPoly(ring) {
   return ring.map((p) => p[0].toFixed(5) + ',' + p[1].toFixed(5)).join(';');
 }
@@ -30,7 +41,7 @@ export function linkEquipo({ colonia, nEquipos, equipo, actividad, campana, brig
   if (actividad) params.set('act', actividad);
   if (campana) params.set('camp', campana);
   if (brigada) params.set('brig', brigada);
-  return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+  return `${origenLink()}${window.location.pathname}?${params.toString()}`;
 }
 
 export function leerParametros() {

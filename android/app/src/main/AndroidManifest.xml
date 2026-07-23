@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- App Links: los links de brigadista (geobrigada.netlify.app) abren
+                 esta app en vez del navegador, para que el GPS de segundo plano
+                 pueda seguir registrando con la pantalla apagada. Verificado con
+                 public/.well-known/assetlinks.json (autoVerify). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="geobrigada.netlify.app" />
+            </intent-filter>
+
         </activity>
 
         <provider

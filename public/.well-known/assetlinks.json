@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.geobrigada.app",
+      "sha256_cert_fingerprints": [
+        "7B:B2:4C:7A:A2:95:61:0F:03:24:09:A6:32:4F:F1:AE:72:F4:31:B5:8A:54:C1:83:36:87:FE:7A:45:F9:32:A0"
+      ]
+    }
+  }
+]
