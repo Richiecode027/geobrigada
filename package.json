@@ -11,11 +11,11 @@
     "apk": "vite build && cap sync android && cd android && .\\gradlew.bat assembleDebug"
   },
   "dependencies": {
-    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.4.2",
     "@capacitor/local-notifications": "^8.2.1",
+    "@capgo/background-geolocation": "^8.3.1",
     "leaflet": "^1.9.4",
     "leaflet-rotate": "^0.2.8",
     "react": "^18.3.1",

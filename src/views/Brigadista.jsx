@@ -18,7 +18,8 @@ import {
   subirReporte,
   encolarPendiente,
   subirPendientes,
-  subirPosicion
+  subirPosicion,
+  leerRastroNativo
 } from '../lib/nube.js';
 import { compartirGPX } from '../lib/gpx.js';
 import { iniciarGPS, esApk } from '../lib/gps.js';
@@ -247,6 +248,39 @@ export default function Brigadista({ params }) {
             ? c
             : new Array(u.coords.length).fill(0);
         });
+
+        // Si el GPS nativo siguió mandando puntos mientras la app estaba
+        // cerrada (ver lib/gps.js y netlify/functions/gps-relay), se
+        // rellenan aquí el trazo y las calles cubiertas con lo que se
+        // perdió, antes de mostrar la ruta.
+        if (nubeConfigurada()) {
+          try {
+            const nuevos = await leerRastroNativo(claveRuta, prog.ultimoNativo);
+            if (nuevos.length > 0) {
+              let ultimoCreado = prog.ultimoNativo || null;
+              nuevos.forEach((row) => {
+                const p = [row.lat, row.lng];
+                const ultimo = track.current[track.current.length - 1];
+                if (!ultimo || haversine(ultimo, p) > 15) track.current.push(p);
+                mia.forEach((u, ui) => {
+                  const c = cubierto.current[ui];
+                  for (let j = 0; j < u.coords.length; j++) {
+                    if (!c[j] && haversine(p, u.coords[j]) < RADIO_CUBIERTO_M) c[j] = 1;
+                  }
+                });
+                ultimoCreado = row.creado;
+              });
+              guardarProgreso(claveRuta, {
+                track: track.current,
+                cubierto: cubierto.current,
+                gpsActivo: prog.gpsActivo || false,
+                ultimoNativo: ultimoCreado
+              });
+            }
+          } catch {
+            /* si falla, el brigadista sigue con lo que ya tenía guardado localmente */
+          }
+        }
 
         setEncuentro(inicio);
         setMiRuta(mia);
@@ -497,6 +531,7 @@ export default function Brigadista({ params }) {
       gpsActivo: true
     });
     detenerGps.current = iniciarGPS(
+      claveRuta,
       (punto) => {
         const p = [punto.lat, punto.lng];
         setGpsActivo(true);

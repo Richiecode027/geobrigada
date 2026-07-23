@@ -150,6 +150,27 @@ export async function cargarPosiciones(minutos = 30) {
   return res.json();
 }
 
+// ---------- rastro nativo (jul 2026) -----------------------------------------
+// Puntos que el GPS mandó directo desde Android nativo (sin pasar por esta
+// app) mientras el brigadista la tenía cerrada. Ver netlify/functions/
+// gps-relay.js y el "relleno" al reabrir en Brigadista.jsx.
+
+export async function leerRastroNativo(ruta, desde) {
+  if (!nubeConfigurada()) return [];
+  try {
+    const filtroFecha = desde ? `&creado=gt.${encodeURIComponent(desde)}` : '';
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/rastro_nativo?ruta=eq.${encodeURIComponent(ruta)}` +
+        `${filtroFecha}&select=lat,lng,creado&order=creado.asc&limit=2000`,
+      { headers: cabeceras() }
+    );
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 // ---------- caché de calles compartido --------------------------------------
 // El primer teléfono que descarga una colonia de OpenStreetMap la guarda aquí;
 // los demás la leen de Supabase (rápido y confiable aunque OSM esté saturado).

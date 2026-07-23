@@ -1,8 +1,12 @@
 // Fuente única de GPS de la app.
 // - En el navegador: navigator.geolocation.watchPosition, como siempre.
-// - Dentro del APK (Capacitor): plugin de geolocalización en segundo plano,
-//   que sigue registrando aunque la pantalla esté apagada o se cambie de app,
-//   mostrando la notificación persistente que exige Android.
+// - Dentro del APK (Capacitor): @capgo/background-geolocation, en "modo de
+//   entrega nativa": además de avisarle a esta pantalla, el propio Android
+//   manda cada punto directo a netlify/functions/gps-relay (sin pasar por
+//   el JavaScript de la app), así que el rastro sigue llegando aunque el
+//   brigadista cierre la app o la quite de Recientes a medio camino. Ver
+//   scripts/esquema-supabase.sql (tabla rastro_nativo) y el "relleno" al
+//   reabrir en Brigadista.jsx.
 // La vista no nota la diferencia: recibe los mismos puntos de cualquier fuente.
 
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -11,6 +15,11 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 export const esApk = Capacitor.isNativePlatform();
 
 const BackgroundGeolocation = esApk ? registerPlugin('BackgroundGeolocation') : null;
+
+// Dentro del APK la app carga su código empaquetado desde una dirección
+// interna del teléfono, así que la URL de entrega nativa debe apuntar
+// siempre al sitio real (igual que los links de brigadista, ver links.js).
+const URL_RELAY = 'https://geobrigada.netlify.app/.netlify/functions/gps-relay';
 
 // Android 13+ pide permiso aparte para mostrar notificaciones; sin él no se ve
 // el aviso "GeoBrigada sigue tu recorrido" con la pantalla apagada (el GPS
@@ -26,9 +35,10 @@ async function pedirPermisoNotificaciones() {
 }
 
 // Empieza a seguir la ubicación y devuelve una función para detener.
-// alPunto recibe { lat, lng, precision } (precision en metros);
-// alError recibe un mensaje listo para mostrarse.
-export function iniciarGPS(alPunto, alError) {
+// claveRuta identifica la ruta (se usa para el rastro nativo; se ignora en
+// el navegador). alPunto recibe { lat, lng, precision } (precision en
+// metros); alError recibe un mensaje listo para mostrarse.
+export function iniciarGPS(claveRuta, alPunto, alError) {
   if (!esApk) {
     if (!('geolocation' in navigator)) {
       alError('Este navegador no tiene GPS disponible.');
@@ -53,19 +63,20 @@ export function iniciarGPS(alPunto, alError) {
   }
 
   // --- APK: plugin de segundo plano ---------------------------------------
-  let idWatcher = null;
   let detenido = false;
 
   pedirPermisoNotificaciones().finally(() => {
     if (detenido) return;
-    BackgroundGeolocation.addWatcher(
+    BackgroundGeolocation.start(
       {
         backgroundTitle: 'GeoBrigada sigue tu recorrido',
-        backgroundMessage: 'Registrando tu ruta aunque la pantalla esté apagada.',
+        backgroundMessage: 'Registrando tu ruta aunque cierres la app.',
         requestPermissions: true,
         stale: false,
         // mínimo de metros entre puntos; el track ya filtra a ~15 m aparte
-        distanceFilter: 3
+        distanceFilter: 3,
+        // entrega nativa: sigue mandando puntos aunque maten el proceso
+        url: URL_RELAY + '?ruta=' + encodeURIComponent(claveRuta)
       },
       (pos, error) => {
         if (error) {
@@ -92,18 +103,11 @@ export function iniciarGPS(alPunto, alError) {
           precision: pos.accuracy ?? 15
         });
       }
-    ).then((id) => {
-      idWatcher = id;
-      // si detuvieron el GPS antes de que el plugin terminara de arrancar
-      if (detenido) BackgroundGeolocation.removeWatcher({ id });
-    });
+    );
   });
 
   return () => {
     detenido = true;
-    if (idWatcher !== null) {
-      BackgroundGeolocation.removeWatcher({ id: idWatcher });
-      idWatcher = null;
-    }
+    BackgroundGeolocation.stop();
   };
 }

@@ -92,3 +92,30 @@ alter table reportes add column if not exists campana text;
 alter table reportes add column if not exists brigada text;
 alter table posiciones add column if not exists campana text;
 alter table posiciones add column if not exists brigada text;
+
+-- ---------------------------------------------------------------------------
+-- Rastro nativo (jul 2026): el GPS del APK sigue registrando aunque el
+-- brigadista cierre la app a medio camino (@capgo/background-geolocation en
+-- "modo de entrega nativa"). Esos puntos NO pasan por el JavaScript de la
+-- app — los manda el celular directo a netlify/functions/gps-relay, que los
+-- guarda aquí. Al reabrir, Brigadista.jsx lee lo que se acumuló desde el
+-- último punto que ya tenía y rellena el trazo y el porcentaje.
+
+create table if not exists rastro_nativo (
+  id bigint generated always as identity primary key,
+  ruta text not null,
+  lat double precision,
+  lng double precision,
+  creado timestamptz not null default now()
+);
+
+create index if not exists rastro_nativo_ruta_creado
+  on rastro_nativo (ruta, creado);
+
+alter table rastro_nativo enable row level security;
+
+create policy "el relay de gps guarda puntos"
+  on rastro_nativo for insert to anon with check (true);
+
+create policy "el brigadista lee su rastro al reabrir"
+  on rastro_nativo for select to anon using (true);
