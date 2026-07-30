@@ -67,6 +67,13 @@ para brigadistas, registro de material repartido.
   coordenadas. También arregla los acentos (viene con doble codificación,
   "UniÃ³n"). Las bardas sin link se listan aparte en la vista, por dirección.
   El resultado de cada visita va a la tabla `bardas_permisos` de Supabase.
+  Si el Excel trae fotos incrustadas EN CELDA (función de Excel 365, no el
+  link de Drive de la columna FOTO), `node scripts/empotrar-fotos-excel.mjs
+  "<xlsx>"` las comprime y las deja acotadas cada una a su celda (si no,
+  salen como "#VALUE!" fuera de Excel 365); luego
+  `node scripts/agregar-fotos-bardas.mjs "<xlsx con fotos en celda>"` las
+  saca a public/bardas-fotos/<id>.jpg y llena el campo `foto` del catálogo —
+  el link de Drive NUNCA se guarda ahí, solo fotos incrustadas de verdad.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

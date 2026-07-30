@@ -155,7 +155,7 @@ const filas = XLSX.utils.sheet_to_json(wb.Sheets[hoja], { header: 1, defval: '' 
 const cab = filas[0].map((h) => limpiar(h).toUpperCase());
 const col = (nombre) => cab.findIndex((h) => h.startsWith(nombre));
 const iNo = col('NO'), iBrig = col('BRIGADA'), iDir = col('DIRECCION');
-const iCol = col('COLONIA'), iDis = col('DISTRITO'), iFoto = col('FOTO'), iRef = col('REFERENCIAS');
+const iCol = col('COLONIA'), iDis = col('DISTRITO'), iRef = col('REFERENCIAS');
 
 const datos = filas.slice(1).filter((r) => String(r[iNo] ?? '').trim() !== '');
 console.log('Bardas en el archivo:', datos.length);
@@ -209,7 +209,11 @@ for (const r of datos) {
     // Sin coordenadas la barda no se puede pintar ni ruteo: se marca aparte.
     lat: coords ? +coords[0].toFixed(6) : null,
     lng: coords ? +coords[1].toFixed(6) : null,
-    foto: limpiar(r[iFoto]) || null,
+    // El link de Drive de la columna FOTO no se guarda aquí (no es una imagen
+    // que la app pueda mostrar directo). Las fotos reales, si el Excel las
+    // trae incrustadas en celda, se agregan aparte con
+    // scripts/agregar-fotos-bardas.mjs.
+    foto: null,
     // La referencia se conserva: si no hubo coordenadas, al menos el brigadista
     // puede abrir el link o leer la referencia escrita a mano.
     referencia: ref || null

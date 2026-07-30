@@ -432,6 +432,7 @@ export default function Bardas() {
                     <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
                       <span>
                         <strong>{i + 1}.</strong> {b.direccion || 'Barda ' + b.id}
+                        {b.foto ? ' 📷' : ''}
                         <br />
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>
                           {b.colonia}
@@ -488,6 +489,7 @@ export default function Bardas() {
               return (
                 <div key={b.id} className="resultado" onClick={() => abrirRegistro(b)}>
                   <strong>{b.direccion || 'Barda ' + b.id}</strong>
+                  {b.foto ? ' 📷' : ''}
                   <div style={{ fontSize: '0.8rem', color: '#666' }}>
                     {b.colonia}
                     {est ? (est.permiso ? ' · ✅ con permiso' : ' · ❌ sin permiso') : ' · pendiente'}
@@ -515,6 +517,7 @@ export default function Bardas() {
                 <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
                   <span>
                     {b.direccion || 'Barda ' + b.id}
+                    {b.foto ? ' 📷' : ''}
                     <br />
                     <span style={{ fontSize: '0.8rem', color: '#666' }}>
                       {b.colonia}
@@ -542,18 +545,26 @@ export default function Bardas() {
               </div>
             )}
 
+            {registrando.foto && (
+              <img
+                src={import.meta.env.BASE_URL + registrando.foto}
+                alt="Foto de la barda"
+                style={{
+                  width: '100%',
+                  maxHeight: 220,
+                  objectFit: 'cover',
+                  borderRadius: 8,
+                  margin: '8px 0',
+                  cursor: 'zoom-in'
+                }}
+                onClick={() => window.open(import.meta.env.BASE_URL + registrando.foto, '_blank')}
+              />
+            )}
+
             <div className="fila">
               <button className="boton suave mini" onClick={() => comoLlegar(registrando)}>
                 🧭 Cómo llegar
               </button>
-              {registrando.foto && (
-                <button
-                  className="boton suave mini"
-                  onClick={() => window.open(registrando.foto, '_blank')}
-                >
-                  📷 Ver foto
-                </button>
-              )}
             </div>
 
             <h3>¿Le dieron permiso de pintar?</h3>
