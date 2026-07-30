@@ -65,6 +65,9 @@ export default function Bardas() {
 
   // Buscador para marcar una barda que alguien hizo SIN la app.
   const [busqueda, setBusqueda] = useState('');
+  // En el teléfono el panel se puede plegar (queda solo el asa) para ver el
+  // mapa casi a pantalla completa mientras se camina.
+  const [panelPlegado, setPanelPlegado] = useState(false);
 
   const [registrando, setRegistrando] = useState(null);
   const [form, setForm] = useState({ permiso: null, nombre: '', telefono: '', aCambio: '', notas: '' });
@@ -218,6 +221,14 @@ export default function Bardas() {
     capaBardas.current = g;
   }, [map, todas, permisosVigentes, ruta, porCalles, miPos]);
 
+  // Al plegar o desplegar el panel, el mapa cambia de tamaño: hay que avisarle
+  // a Leaflet o se queda con el tamaño viejo y los pines salen corridos.
+  useEffect(() => {
+    if (!map) return;
+    const tid = setTimeout(() => map.invalidateSize({ animate: false }), 80);
+    return () => clearTimeout(tid);
+  }, [map, panelPlegado]);
+
   useEffect(() => {
     if (!map || !miPos) return;
     if (capaYo.current) capaYo.current.remove();
@@ -322,7 +333,16 @@ export default function Bardas() {
   return (
     <div className="contenido">
       <div className="mapa" ref={mapaRef} />
-      <div className="panel">
+      <div className={'panel' + (panelPlegado ? ' plegado' : '')}>
+        {/* Asa (solo en el teléfono): pliega el panel para ver el mapa grande */}
+        <button
+          type="button"
+          className="asa-panel"
+          onClick={() => setPanelPlegado(!panelPlegado)}
+        >
+          <span className="asa-barrita" />
+          {panelPlegado ? '▲ Mostrar panel' : '▼ Ocultar panel'}
+        </button>
         <h2>Bardas por pedir permiso</h2>
 
         {cargando && <p>Cargando bardas…</p>}
