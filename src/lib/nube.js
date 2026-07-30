@@ -270,6 +270,37 @@ export async function cargarBardasNuevas() {
   return res.json();
 }
 
+// ---------- reservas de bardas (jul 2026) ------------------------------------
+// Evita que dos equipos calculen la MISMA ruta si arrancan al mismo tiempo:
+// al armar su recorrido, cada equipo aparta esas bardas por unas horas.
+
+const RESERVA_HORAS = 3;
+
+export async function cargarReservasBardas() {
+  if (!nubeConfigurada()) return [];
+  const ahora = new Date().toISOString();
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/bardas_reservadas?vence=gt.${ahora}&select=barda_id,equipo,vence`,
+    { headers: cabeceras() }
+  );
+  if (!res.ok) throw new Error('la nube respondió ' + res.status);
+  return res.json();
+}
+
+export async function reservarBardas(ids, equipo) {
+  if (!nubeConfigurada() || ids.length === 0) return;
+  const vence = new Date(Date.now() + RESERVA_HORAS * 3600000).toISOString();
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/bardas_reservadas`, {
+      method: 'POST',
+      headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(ids.map((barda_id) => ({ barda_id: String(barda_id), equipo: equipo || null, vence })))
+    });
+  } catch {
+    /* si falla, la ruta se calculó igual; en el peor caso otro equipo se topa con las mismas bardas */
+  }
+}
+
 // ---------- caché de calles compartido --------------------------------------
 // El primer teléfono que descarga una colonia de OpenStreetMap la guarda aquí;
 // los demás la leen de Supabase (rápido y confiable aunque OSM esté saturado).

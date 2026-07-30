@@ -205,3 +205,29 @@ create policy "cualquiera sube foto de barda nueva"
 create policy "cualquiera ve fotos de bardas nuevas"
   on storage.objects for select to anon
   using (bucket_id = 'bardas-fotos-nuevas');
+
+-- ---------------------------------------------------------------------------
+-- Reservas de bardas (jul 2026): si dos equipos arrancan su recorrido al
+-- mismo tiempo y cerca uno del otro, sin esto calcularían la MISMA ruta (el
+-- algoritmo es determinista y solo descuenta bardas ya visitadas). Al armar
+-- su recorrido, cada equipo aparta esas bardas por unas horas; los demás las
+-- ven ocupadas y su ruta se calcula con las que quedan libres. Vencen solas
+-- (columna "vence") por si un equipo cierra la app sin avisar.
+
+create table if not exists bardas_reservadas (
+  barda_id text primary key,
+  equipo text,
+  vence timestamptz not null,
+  creado timestamptz not null default now()
+);
+
+alter table bardas_reservadas enable row level security;
+
+create policy "equipos apartan bardas al iniciar su ruta"
+  on bardas_reservadas for insert to anon with check (true);
+
+create policy "equipos renuevan o liberan su reserva"
+  on bardas_reservadas for update to anon using (true) with check (true);
+
+create policy "todos ven que bardas estan apartadas"
+  on bardas_reservadas for select to anon using (true);

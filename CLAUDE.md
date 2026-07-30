@@ -82,7 +82,21 @@ para brigadistas, registro de material repartido.
   subirse al bucket público `bardas-fotos-nuevas` de Supabase Storage. La fila
   va a la tabla `bardas_nuevas` (id lo genera el celular) y al cargar la vista
   se mezcla con el catálogo del Excel (aBardaCatalogo en Bardas.jsx), así que
-  sale igual en el mapa, la búsqueda y el cálculo de rutas.
+  sale igual en el mapa, la búsqueda y el cálculo de rutas. En vez de GPS
+  también se puede pegar un link de Google Maps (como los del Excel): un link
+  LARGO ya trae las coordenadas y se leen directo en el navegador
+  (src/lib/mapsLink.js); uno CORTO (maps.app.goo.gl) hay que resolverlo del
+  lado del servidor porque el navegador no puede leer a dónde redirige un
+  dominio ajeno (CORS) — para eso existe
+  netlify/functions/resolver-link-maps.js (mismo truco que build-bardas.mjs,
+  pero en vivo); esa función SOLO corre en Netlify, no en `npm run dev`.
+  Reservas (jul 2026): si dos equipos arrancan su recorrido casi al mismo
+  tiempo y cerca uno del otro, el algoritmo determinista les daría LA MISMA
+  ruta. Por eso, justo antes de calcular, se consulta `bardas_reservadas`
+  (tabla nueva) y se excluyen las bardas que otro equipo ya trae en su ruta;
+  al terminar de calcular, el equipo aparta las suyas por 3 horas (vencen
+  solas, por si cierra la app sin avisar). Si la consulta falla, se sigue sin
+  filtrar (mejor una posible repetida que trabar la ruta).
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

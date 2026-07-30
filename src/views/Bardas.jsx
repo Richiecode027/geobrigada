@@ -4,6 +4,7 @@ import { useMap } from '../components/useMap.js';
 import { iniciarGPS, obtenerPosicionActual } from '../lib/gps.js';
 import { registrarAtras } from '../lib/atras.js';
 import { comprimirImagen } from '../lib/imagen.js';
+import { coordsDeLinkMaps } from '../lib/mapsLink.js';
 import {
   cargarBardas,
   bardasPendientes,
@@ -17,7 +18,9 @@ import {
   anularPermisoBarda,
   cargarBardasNuevas,
   guardarBardaNueva,
-  subirFotoBardaNueva
+  subirFotoBardaNueva,
+  cargarReservasBardas,
+  reservarBardas
 } from '../lib/nube.js';
 
 // Una fila de bardas_nuevas (la sube el equipo desde la app) al mismo formato
@@ -105,6 +108,9 @@ export default function Bardas() {
   const [posNueva, setPosNueva] = useState(null);
   const [gpsNuevaError, setGpsNuevaError] = useState('');
   const [guardandoNueva, setGuardandoNueva] = useState(false);
+  const [linkNueva, setLinkNueva] = useState('');
+  const [resolviendoLink, setResolviendoLink] = useState(false);
+  const [linkNuevaError, setLinkNuevaError] = useState('');
 
   // --- carga inicial: catálogo + lo que ya se visitó -----------------------
   useEffect(() => {
@@ -172,20 +178,49 @@ export default function Bardas() {
   }, [agregando, registrando, fase]);
 
   // --- agregar una barda que no está en el catálogo -------------------------
+  // Si el equipo pega un link de Maps, esa ubicación manda sobre la del GPS
+  // (que puede seguir resolviéndose de fondo y llegar después): esta bandera
+  // evita que el GPS, al llegar tarde, le gane al link ya elegido a propósito.
+  const posDeLinkRef = useRef(false);
+
   function abrirAgregar() {
     setError('');
     setAgregando(true);
     setFormNueva({ direccion: '', colonia: '', archivo: null, previewUrl: null });
     setPosNueva(null);
     setGpsNuevaError('');
+    setLinkNueva('');
+    setLinkNuevaError('');
+    posDeLinkRef.current = false;
     obtenerPosicionActual()
-      .then((p) => setPosNueva([p.lat, p.lng]))
-      .catch((e) => setGpsNuevaError(e.message));
+      .then((p) => {
+        if (posDeLinkRef.current) return;
+        setPosNueva([p.lat, p.lng]);
+      })
+      .catch((e) => {
+        if (posDeLinkRef.current) return;
+        setGpsNuevaError(e.message);
+      });
   }
 
   function cerrarAgregar() {
     if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
     setAgregando(false);
+  }
+
+  async function usarLink() {
+    if (!linkNueva.trim()) return;
+    setResolviendoLink(true);
+    setLinkNuevaError('');
+    try {
+      const coords = await coordsDeLinkMaps(linkNueva);
+      posDeLinkRef.current = true;
+      setPosNueva(coords);
+      setGpsNuevaError('');
+    } catch (e) {
+      setLinkNuevaError(e.message);
+    }
+    setResolviendoLink(false);
   }
 
   async function guardarNueva() {
@@ -242,6 +277,24 @@ export default function Bardas() {
     );
   }
 
+  // Bardas pendientes que NINGÚN OTRO equipo trae ya en su ruta: se consulta
+  // justo antes de calcular, para que dos equipos que arrancan casi al mismo
+  // tiempo no acaben con la misma lista.
+  async function pendientesLibres() {
+    if (!nubeConfigurada()) return pendientes;
+    let reservas = [];
+    try {
+      reservas = await cargarReservasBardas();
+    } catch {
+      return pendientes; // si falla la consulta, se sigue sin filtrar
+    }
+    const miEquipo = equipo.trim();
+    const apartadas = new Set(
+      reservas.filter((r) => (r.equipo || '') !== miEquipo).map((r) => String(r.barda_id))
+    );
+    return pendientes.filter((b) => !apartadas.has(String(b.id)));
+  }
+
   // Con la primera ubicación se arma la ruta (una sola vez: si se recalculara
   // a cada paso del GPS, el orden cambiaría mientras el equipo camina).
   useEffect(() => {
@@ -250,10 +303,12 @@ export default function Bardas() {
     (async () => {
       setCalculando(true);
       const cuantas = Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA);
-      const r = await rutaDeBardasPorCalles(miPos, pendientes, cuantas);
+      const libres = await pendientesLibres();
+      const r = await rutaDeBardasPorCalles(miPos, libres, cuantas);
       setRuta(r.ruta);
       setPorCalles(r.porCalles);
       setCalculando(false);
+      reservarBardas(r.ruta.map((b) => b.id), equipo.trim());
     })();
   }, [fase, miPos, pendientes, cantidad]);
 
@@ -262,10 +317,12 @@ export default function Bardas() {
     if (!miPos) return;
     setCalculando(true);
     const cuantas = Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA);
-    const r = await rutaDeBardasPorCalles(miPos, pendientes, cuantas);
+    const libres = await pendientesLibres();
+    const r = await rutaDeBardasPorCalles(miPos, libres, cuantas);
     setRuta(r.ruta);
     setPorCalles(r.porCalles);
     setCalculando(false);
+    reservarBardas(r.ruta.map((b) => b.id), equipo.trim());
   }
 
   // --- mapa ----------------------------------------------------------------
@@ -620,6 +677,29 @@ export default function Bardas() {
                       marginTop: 8
                     }}
                   />
+                )}
+
+                <label className="etiqueta">O pega el link de ubicación de Google Maps (opcional)</label>
+                <div className="fila">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="https://maps.app.goo.gl/..."
+                    value={linkNueva}
+                    onChange={(e) => setLinkNueva(e.target.value)}
+                  />
+                  <button
+                    className="boton suave mini"
+                    onClick={usarLink}
+                    disabled={resolviendoLink || !linkNueva.trim()}
+                  >
+                    {resolviendoLink ? 'Leyendo…' : 'Usar este link'}
+                  </button>
+                </div>
+                {linkNuevaError && (
+                  <div className="aviso" style={{ background: '#fff0f0', borderColor: '#e3b3b3' }}>
+                    ⚠ {linkNuevaError}
+                  </div>
                 )}
 
                 <div className="aviso" style={{ marginTop: 8 }}>
