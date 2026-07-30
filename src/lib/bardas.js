@@ -33,15 +33,6 @@ export function bardasPendientes(bardas, permisos) {
   return bardas.filter((b) => b.lat != null && !ya.has(String(b.id)));
 }
 
-// Bardas pendientes SIN coordenadas: el que las capturó no dejó link de mapa
-// (o el link apuntaba a un negocio sin coordenadas). No se pueden pintar ni
-// meter en la ruta, pero hay que ir a preguntar igual, así que se listan
-// aparte con su dirección para que no se pierdan.
-export function bardasSinUbicacion(bardas, permisos) {
-  const ya = visitadas(permisos);
-  return bardas.filter((b) => b.lat == null && !ya.has(String(b.id)));
-}
-
 // Elige QUÉ bardas hacer hoy: una ZONA COMPACTA, no las que vayan quedando
 // cerca una de otra en cadena.
 //

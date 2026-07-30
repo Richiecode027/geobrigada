@@ -7,7 +7,6 @@ import { comprimirImagen } from '../lib/imagen.js';
 import {
   cargarBardas,
   bardasPendientes,
-  bardasSinUbicacion,
   rutaDeBardasPorCalles,
   largoDeRuta
 } from '../lib/bardas.js';
@@ -141,7 +140,6 @@ export default function Bardas() {
 
   const permisosVigentes = useMemo(() => permisos.filter((p) => !p.anulado), [permisos]);
   const pendientes = useMemo(() => bardasPendientes(todas, permisos), [todas, permisos]);
-  const sinUbicacion = useMemo(() => bardasSinUbicacion(todas, permisos), [todas, permisos]);
   const visitadas = permisosVigentes.length;
   const conPermiso = permisosVigentes.filter((p) => p.permiso).length;
 
@@ -689,31 +687,6 @@ export default function Bardas() {
           </>
         )}
 
-        {/* ---------- BARDAS SIN UBICACIÓN ---------- */}
-        {!cargando && sinUbicacion.length > 0 && (
-          <>
-            <h3>Sin ubicación en el mapa ({sinUbicacion.length})</h3>
-            <p className="nota" style={{ marginTop: 0 }}>
-              A estas no se les puso link de mapa al capturarlas: hay que buscarlas por
-              la dirección.
-            </p>
-            <ul className="lista-calles">
-              {sinUbicacion.map((b) => (
-                <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
-                  <span>
-                    {b.direccion || 'Barda ' + b.id}
-                    {b.foto ? ' 📷' : ''}
-                    <br />
-                    <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                      {b.colonia}
-                      {b.referencia && !/^https?:/.test(b.referencia) ? ` · ${b.referencia}` : ''}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
 
         {/* ---------- FORMULARIO ---------- */}
         {registrando && (
