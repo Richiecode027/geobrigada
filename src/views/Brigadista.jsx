@@ -634,6 +634,26 @@ export default function Brigadista({ params }) {
 
   const totalKm = miRuta ? miRuta.reduce((s, u) => s + u.length, 0) / 1000 : 0;
 
+  // Salida de emergencia: por si el link trae datos equivocados o el
+  // brigadista no puede terminar el recorrido ahorita. NO borra el avance
+  // caminado (queda guardado por si vuelve a entrar con el mismo link) — solo
+  // apaga el GPS y deja de mandar aquí a la fuerza la próxima vez que se abra
+  // la app (ver guardarRutaActiva/App.jsx).
+  function salirDeLaRuta() {
+    const mensaje = gpsActivo
+      ? '¿Salir de esta ruta? Se apaga el GPS. Tu avance no se pierde: puedes volver a entrar tocando el mismo link.'
+      : '¿Salir de esta ruta?';
+    if (!window.confirm(mensaje)) return;
+    if (detenerGps.current) {
+      detenerGps.current();
+      detenerGps.current = null;
+    }
+    setGpsActivo(false);
+    borrarRutaActiva();
+    window.history.replaceState(null, '', window.location.pathname);
+    window.dispatchEvent(new Event('geobrigada:link'));
+  }
+
   // --- cierre ---------------------------------------------------------------
   function terminarRecorrido() {
     // Se apaga el GPS y se libera la pantalla: el recorrido ya terminó.
@@ -729,12 +749,17 @@ export default function Brigadista({ params }) {
     <div className="app">
       <header className="encabezado">
         <h1>🗺️ {params.nombre}</h1>
-        <span className="sub">
-          {params.campana ? params.campana + ' · ' : ''}
-          {params.actividad}
-          {params.brigada ? ' · ' + params.brigada : ''} · Equipo {params.equipo} de{' '}
-          {params.nEquipos}
-        </span>
+        <div className="encabezado-derecha">
+          <span className="sub">
+            {params.campana ? params.campana + ' · ' : ''}
+            {params.actividad}
+            {params.brigada ? ' · ' + params.brigada : ''} · Equipo {params.equipo} de{' '}
+            {params.nEquipos}
+          </span>
+          <button className="salir-ruta" onClick={salirDeLaRuta} title="Salir de esta ruta">
+            ✕ Salir
+          </button>
+        </div>
       </header>
       <div className="contenido">
         <div className="mapa" ref={mapaRef} />
