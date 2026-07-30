@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
 import { iniciarGPS } from '../lib/gps.js';
+import { registrarAtras } from '../lib/atras.js';
 import {
   cargarBardas,
   bardasPendientes,
@@ -99,6 +100,30 @@ export default function Bardas() {
   const sinUbicacion = useMemo(() => bardasSinUbicacion(todas, permisos), [todas, permisos]);
   const visitadas = permisosVigentes.length;
   const conPermiso = permisosVigentes.filter((p) => p.permiso).length;
+
+  function terminarRecorrido() {
+    if (detenerGPS.current) detenerGPS.current();
+    detenerGPS.current = null;
+    setFase('config');
+    setRuta([]);
+  }
+
+  // Botón "atrás" de Android: en vez de cerrar la app, cierra lo que esté
+  // abierto. Primero el formulario, luego el recorrido; ya en el inicio, sí
+  // deja salir.
+  useEffect(() => {
+    return registrarAtras(() => {
+      if (registrando) {
+        setRegistrando(null);
+        return true;
+      }
+      if (fase === 'recorrido') {
+        terminarRecorrido();
+        return true;
+      }
+      return false;
+    });
+  }, [registrando, fase]);
 
   // --- empezar el recorrido (solo al tocar el botón) -----------------------
   function iniciarRecorrido() {
@@ -418,15 +443,7 @@ export default function Bardas() {
             )}
 
             <div className="fila" style={{ marginTop: 6 }}>
-              <button
-                className="boton suave mini"
-                onClick={() => {
-                  if (detenerGPS.current) detenerGPS.current();
-                  detenerGPS.current = null;
-                  setFase('config');
-                  setRuta([]);
-                }}
-              >
+              <button className="boton suave mini" onClick={terminarRecorrido}>
                 ⏹ Terminar recorrido
               </button>
             </div>

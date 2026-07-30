@@ -26,8 +26,10 @@
     "@turf/turf": "^7.3.5",
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "adm-zip": "^0.6.0",
     "proj4": "^2.20.9",
     "shapefile": "^0.6.6",
+    "sharp": "^0.35.3",
     "vite": "^6.0.0",
     "xlsx": "^0.18.5"
   }
