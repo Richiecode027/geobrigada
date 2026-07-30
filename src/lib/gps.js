@@ -111,3 +111,37 @@ export function iniciarGPS(claveRuta, alPunto, alError) {
     BackgroundGeolocation.stop();
   };
 }
+
+// Una sola lectura de ubicación (no un seguimiento continuo): para cuando solo
+// hace falta saber "dónde estoy parado ahora" una vez, como al agregar una
+// barda nueva. Reutiliza iniciarGPS y se detiene en cuanto llega el primer
+// punto, así funciona igual en el navegador y dentro del APK.
+export function obtenerPosicionActual(timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    let listo = false;
+    let detener = () => {};
+    const vencido = setTimeout(() => {
+      if (listo) return;
+      listo = true;
+      detener();
+      reject(new Error('No se pudo obtener tu ubicación a tiempo.'));
+    }, timeoutMs);
+    detener = iniciarGPS(
+      'una_vez',
+      (p) => {
+        if (listo) return;
+        listo = true;
+        clearTimeout(vencido);
+        detener();
+        resolve(p);
+      },
+      (msg) => {
+        if (listo) return;
+        listo = true;
+        clearTimeout(vencido);
+        detener();
+        reject(new Error(msg));
+      }
+    );
+  });
+}

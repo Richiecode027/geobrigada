@@ -164,3 +164,44 @@ create policy "todos ven que bardas ya se visitaron"
 -- anulada y la app la vuelve a contar como pendiente, dejando el rastro de
 -- quién la anuló.
 alter table bardas_permisos add column if not exists anulado boolean not null default false;
+
+-- ---------------------------------------------------------------------------
+-- Bardas agregadas desde el celular (jul 2026): el catálogo (public/bardas.json)
+-- sale del Excel y no cambia en la jornada, pero un equipo puede encontrar en
+-- la calle una barda que nadie capturó. Esta tabla guarda esas altas: id lo
+-- genera el celular (uuid), la ubicación es la del GPS al momento de agregarla
+-- y la foto (opcional) se sube al bucket "bardas-fotos-nuevas".
+
+create table if not exists bardas_nuevas (
+  id text primary key,
+  direccion text,
+  colonia text,
+  distrito text,
+  lat double precision not null,
+  lng double precision not null,
+  foto text,           -- URL pública en el bucket "bardas-fotos-nuevas", o null
+  equipo text,
+  creado timestamptz not null default now()
+);
+
+alter table bardas_nuevas enable row level security;
+
+create policy "cualquiera agrega una barda nueva"
+  on bardas_nuevas for insert to anon with check (true);
+
+create policy "todos ven las bardas nuevas"
+  on bardas_nuevas for select to anon using (true);
+
+-- Bucket para las fotos de esas bardas nuevas (público: la app las muestra
+-- con una URL directa, igual que las fotos del catálogo).
+insert into storage.buckets (id, name, public)
+values ('bardas-fotos-nuevas', 'bardas-fotos-nuevas', true)
+on conflict (id) do nothing;
+
+create policy "cualquiera sube foto de barda nueva"
+  on storage.objects for insert to anon
+  with check (bucket_id = 'bardas-fotos-nuevas');
+
+create policy "cualquiera ve fotos de bardas nuevas"
+  on storage.objects for select to anon
+  using (bucket_id = 'bardas-fotos-nuevas');

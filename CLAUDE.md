@@ -74,6 +74,15 @@ para brigadistas, registro de material repartido.
   `node scripts/agregar-fotos-bardas.mjs "<xlsx con fotos en celda>"` las
   saca a public/bardas-fotos/<id>.jpg y llena el campo `foto` del catálogo —
   el link de Drive NUNCA se guarda ahí, solo fotos incrustadas de verdad.
+  Además del catálogo (fijo, sale del Excel), cualquier equipo puede AGREGAR
+  una barda nueva desde la propia app ("¿Encontraste una barda que no está en
+  la lista?"): la ubicación es obligatoria (una sola lectura de GPS, ver
+  obtenerPosicionActual en src/lib/gps.js) y la foto es opcional — se
+  comprime en el celular (src/lib/imagen.js, createImageBitmap) antes de
+  subirse al bucket público `bardas-fotos-nuevas` de Supabase Storage. La fila
+  va a la tabla `bardas_nuevas` (id lo genera el celular) y al cargar la vista
+  se mezcla con el catálogo del Excel (aBardaCatalogo en Bardas.jsx), así que
+  sale igual en el mapa, la búsqueda y el cálculo de rutas.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

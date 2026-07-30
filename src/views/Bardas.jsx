@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
-import { iniciarGPS } from '../lib/gps.js';
+import { iniciarGPS, obtenerPosicionActual } from '../lib/gps.js';
 import { registrarAtras } from '../lib/atras.js';
+import { comprimirImagen } from '../lib/imagen.js';
 import {
   cargarBardas,
   bardasPendientes,
@@ -14,8 +15,34 @@ import {
   nubeConfigurada,
   cargarPermisosBardas,
   guardarPermisoBarda,
-  anularPermisoBarda
+  anularPermisoBarda,
+  cargarBardasNuevas,
+  guardarBardaNueva,
+  subirFotoBardaNueva
 } from '../lib/nube.js';
+
+// Una fila de bardas_nuevas (la sube el equipo desde la app) al mismo formato
+// que usa el resto de la vista para una barda del catálogo.
+function aBardaCatalogo(n) {
+  return {
+    id: n.id,
+    brigada: null,
+    direccion: n.direccion,
+    colonia: n.colonia,
+    distrito: n.distrito,
+    lat: n.lat,
+    lng: n.lng,
+    foto: n.foto,
+    referencia: null
+  };
+}
+
+const idNuevo = () =>
+  'n-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+
+// Las fotos del catálogo (Excel) son rutas locales ("bardas-fotos/1.jpg");
+// las de bardas agregadas desde la app son URLs completas de Supabase Storage.
+const urlFoto = (foto) => (/^https?:/.test(foto) ? foto : import.meta.env.BASE_URL + foto);
 
 const CANTIDAD_SUGERIDA = 10;
 
@@ -73,12 +100,19 @@ export default function Bardas() {
   const [form, setForm] = useState({ permiso: null, nombre: '', telefono: '', aCambio: '', notas: '' });
   const [guardando, setGuardando] = useState(false);
 
+  // Agregar una barda que no está en el catálogo (la encontró el equipo en la calle).
+  const [agregando, setAgregando] = useState(false);
+  const [formNueva, setFormNueva] = useState({ direccion: '', colonia: '', archivo: null, previewUrl: null });
+  const [posNueva, setPosNueva] = useState(null);
+  const [gpsNuevaError, setGpsNuevaError] = useState('');
+  const [guardandoNueva, setGuardandoNueva] = useState(false);
+
   // --- carga inicial: catálogo + lo que ya se visitó -----------------------
   useEffect(() => {
     (async () => {
       try {
         const bardas = await cargarBardas();
-        setTodas(bardas);
+        let todasConNuevas = bardas;
         if (nubeConfigurada()) {
           try {
             setPermisos(await cargarPermisosBardas());
@@ -87,7 +121,14 @@ export default function Bardas() {
               'No se pudo leer de la nube qué bardas ya se visitaron; se muestran todas como pendientes.'
             );
           }
+          try {
+            const nuevas = await cargarBardasNuevas();
+            todasConNuevas = [...bardas, ...nuevas.map(aBardaCatalogo)];
+          } catch {
+            /* si falla, se sigue solo con el catálogo del Excel */
+          }
         }
+        setTodas(todasConNuevas);
       } catch (e) {
         setError(e.message);
       }
@@ -116,6 +157,10 @@ export default function Bardas() {
   // deja salir.
   useEffect(() => {
     return registrarAtras(() => {
+      if (agregando) {
+        cerrarAgregar();
+        return true;
+      }
       if (registrando) {
         setRegistrando(null);
         return true;
@@ -126,7 +171,58 @@ export default function Bardas() {
       }
       return false;
     });
-  }, [registrando, fase]);
+  }, [agregando, registrando, fase]);
+
+  // --- agregar una barda que no está en el catálogo -------------------------
+  function abrirAgregar() {
+    setError('');
+    setAgregando(true);
+    setFormNueva({ direccion: '', colonia: '', archivo: null, previewUrl: null });
+    setPosNueva(null);
+    setGpsNuevaError('');
+    obtenerPosicionActual()
+      .then((p) => setPosNueva([p.lat, p.lng]))
+      .catch((e) => setGpsNuevaError(e.message));
+  }
+
+  function cerrarAgregar() {
+    if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
+    setAgregando(false);
+  }
+
+  async function guardarNueva() {
+    if (!posNueva) return;
+    setGuardandoNueva(true);
+    const id = idNuevo();
+    let foto = null;
+    if (formNueva.archivo) {
+      try {
+        const comprimida = await comprimirImagen(formNueva.archivo);
+        foto = await subirFotoBardaNueva(id, comprimida);
+      } catch {
+        /* si falla la foto, se guarda la barda igual (la ubicación es lo importante) */
+      }
+    }
+    const fila = {
+      id,
+      direccion: formNueva.direccion.trim() || null,
+      colonia: formNueva.colonia.trim() || null,
+      distrito: null,
+      lat: posNueva[0],
+      lng: posNueva[1],
+      foto,
+      equipo: equipo.trim() || null
+    };
+    const ok = await guardarBardaNueva(fila);
+    setGuardandoNueva(false);
+    if (!ok) {
+      setError('No se pudo guardar la barda nueva (¿sin señal?). Intenta de nuevo.');
+      return;
+    }
+    setTodas((t) => [...t, aBardaCatalogo(fila)]);
+    if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
+    setAgregando(false);
+  }
 
   // --- empezar el recorrido (solo al tocar el botón) -----------------------
   function iniciarRecorrido() {
@@ -471,6 +567,95 @@ export default function Bardas() {
           </>
         )}
 
+        {/* ---------- AGREGAR UNA BARDA QUE NO ESTÁ EN EL CATÁLOGO ---------- */}
+        {!cargando && (
+          <>
+            <h3>¿Encontraste una barda que no está en la lista?</h3>
+            {!agregando ? (
+              <div className="fila" style={{ marginTop: 0 }}>
+                <button className="boton suave mini" onClick={abrirAgregar}>
+                  ➕ Agregar barda nueva
+                </button>
+              </div>
+            ) : (
+              <div className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1' }}>
+                <label className="etiqueta">Dirección (opcional)</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={formNueva.direccion}
+                  onChange={(e) => setFormNueva((f) => ({ ...f, direccion: e.target.value }))}
+                />
+
+                <label className="etiqueta">Colonia (opcional)</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={formNueva.colonia}
+                  onChange={(e) => setFormNueva((f) => ({ ...f, colonia: e.target.value }))}
+                />
+
+                <label className="etiqueta">Foto (opcional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    const archivo = e.target.files?.[0] || null;
+                    if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
+                    setFormNueva((f) => ({
+                      ...f,
+                      archivo,
+                      previewUrl: archivo ? URL.createObjectURL(archivo) : null
+                    }));
+                  }}
+                />
+                {formNueva.previewUrl && (
+                  <img
+                    src={formNueva.previewUrl}
+                    alt=""
+                    style={{
+                      width: '100%',
+                      maxHeight: 180,
+                      objectFit: 'cover',
+                      borderRadius: 8,
+                      marginTop: 8
+                    }}
+                  />
+                )}
+
+                <div className="aviso" style={{ marginTop: 8 }}>
+                  {posNueva
+                    ? `📍 Ubicación lista (${posNueva[0].toFixed(5)}, ${posNueva[1].toFixed(5)})`
+                    : gpsNuevaError
+                    ? `⚠ ${gpsNuevaError}`
+                    : '📍 Obteniendo tu ubicación…'}
+                  {gpsNuevaError && (
+                    <div className="fila" style={{ marginTop: 6 }}>
+                      <button className="boton suave mini" onClick={abrirAgregar}>
+                        🔄 Reintentar
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="fila" style={{ marginTop: 8 }}>
+                  <button
+                    className="boton primario mini"
+                    onClick={guardarNueva}
+                    disabled={guardandoNueva || !posNueva}
+                  >
+                    {guardandoNueva ? 'Guardando…' : '✅ Guardar barda'}
+                  </button>
+                  <button className="boton suave mini" onClick={cerrarAgregar}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
         {/* ---------- MARCAR UNA BARDA HECHA SIN LA APP ---------- */}
         {!cargando && (
           <>
@@ -547,7 +732,7 @@ export default function Bardas() {
 
             {registrando.foto && (
               <img
-                src={import.meta.env.BASE_URL + registrando.foto}
+                src={urlFoto(registrando.foto)}
                 alt="Foto de la barda"
                 style={{
                   width: '100%',
@@ -557,7 +742,7 @@ export default function Bardas() {
                   margin: '8px 0',
                   cursor: 'zoom-in'
                 }}
-                onClick={() => window.open(import.meta.env.BASE_URL + registrando.foto, '_blank')}
+                onClick={() => window.open(urlFoto(registrando.foto), '_blank')}
               />
             )}
 

@@ -222,6 +222,54 @@ export async function anularPermisoBarda(bardaId) {
   }
 }
 
+// ---------- bardas agregadas desde el celular (jul 2026) --------------------
+// A diferencia del catálogo (viene del Excel, no cambia en la jornada), estas
+// las da de alta cualquier equipo desde la propia app: encontró una barda que
+// nadie había capturado, le toma foto (opcional) y la sube con su GPS.
+
+export async function subirFotoBardaNueva(id, blob) {
+  if (!nubeConfigurada()) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bardas-fotos-nuevas/${id}.jpg`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'image/jpeg'
+      },
+      body: blob
+    });
+    if (!res.ok) return null;
+    return `${SUPABASE_URL}/storage/v1/object/public/bardas-fotos-nuevas/${id}.jpg`;
+  } catch {
+    return null;
+  }
+}
+
+export async function guardarBardaNueva(fila) {
+  if (!nubeConfigurada()) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_nuevas`, {
+      method: 'POST',
+      headers: { ...cabeceras(), Prefer: 'return=minimal' },
+      body: JSON.stringify(fila)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function cargarBardasNuevas() {
+  if (!nubeConfigurada()) return [];
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/bardas_nuevas?select=*&order=creado.desc&limit=1000`,
+    { headers: cabeceras() }
+  );
+  if (!res.ok) throw new Error('la nube respondió ' + res.status);
+  return res.json();
+}
+
 // ---------- caché de calles compartido --------------------------------------
 // El primer teléfono que descarga una colonia de OpenStreetMap la guarda aquí;
 // los demás la leen de Supabase (rápido y confiable aunque OSM esté saturado).
