@@ -79,6 +79,7 @@ export default function Bardas() {
 
   const [todas, setTodas] = useState([]);
   const [permisos, setPermisos] = useState([]);
+  const [reservas, setReservas] = useState([]);
   const [miPos, setMiPos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -132,6 +133,11 @@ export default function Bardas() {
           } catch {
             /* si falla, se sigue solo con el catálogo del Excel */
           }
+          try {
+            setReservas(await cargarReservasBardas());
+          } catch {
+            /* si falla, simplemente no se ven las apartadas de otros equipos */
+          }
         }
         setTodas(todasConNuevas);
       } catch (e) {
@@ -144,10 +150,37 @@ export default function Bardas() {
     };
   }, []);
 
+  // Refresco ligero de las reservas: para que si alguien más aparta bardas
+  // mientras este equipo sigue viendo el mapa (decidiendo por dónde empezar),
+  // el color se ponga al día sin que tenga que recargar la app.
+  useEffect(() => {
+    if (!nubeConfigurada()) return;
+    const id = setInterval(async () => {
+      try {
+        setReservas(await cargarReservasBardas());
+      } catch {
+        /* se reintenta en el siguiente ciclo */
+      }
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
+
   const permisosVigentes = useMemo(() => permisos.filter((p) => !p.anulado), [permisos]);
   const pendientes = useMemo(() => bardasPendientes(todas, permisos), [todas, permisos]);
   const visitadas = permisosVigentes.length;
   const conPermiso = permisosVigentes.filter((p) => p.permiso).length;
+
+  // Bardas que otro equipo ya trae en su recorrido (las propias no cuentan:
+  // ese color es "azul con número", ya lo distingue el mapa).
+  const reservasAjenas = useMemo(() => {
+    const miEquipo = equipo.trim();
+    const m = new Map();
+    for (const r of reservas) {
+      if ((r.equipo || '') === miEquipo) continue;
+      m.set(String(r.barda_id), r);
+    }
+    return m;
+  }, [reservas, equipo]);
 
   function terminarRecorrido() {
     if (detenerGPS.current) detenerGPS.current();
@@ -337,6 +370,7 @@ export default function Bardas() {
       if (b.lat == null) continue;
       const visita = porId.get(String(b.id));
       const orden = enRuta.get(String(b.id));
+      const apartada = reservasAjenas.get(String(b.id));
       let color = '#9aa5b1';
       let texto = '';
       if (visita) {
@@ -345,11 +379,18 @@ export default function Bardas() {
       } else if (orden) {
         color = '#1d6fd1';
         texto = String(orden);
+      } else if (apartada) {
+        color = '#e8a33d';
+        texto = '🔒';
       }
       pinBarda([b.lat, b.lng], texto, color)
         .bindTooltip(
           `<strong>${b.direccion || 'Barda ' + b.id}</strong><br>${b.colonia || ''}` +
-            (visita ? `<br>${visita.permiso ? '✅ Con permiso' : '❌ Sin permiso'}` : '')
+            (visita
+              ? `<br>${visita.permiso ? '✅ Con permiso' : '❌ Sin permiso'}`
+              : apartada
+              ? `<br>🔒 Apartada por ${apartada.equipo || 'otro equipo'}`
+              : '')
         )
         .on('click', () => abrirRegistro(b))
         .addTo(g);
@@ -370,7 +411,7 @@ export default function Bardas() {
       }
     }
     capaBardas.current = g;
-  }, [map, todas, permisosVigentes, ruta, porCalles, miPos]);
+  }, [map, todas, permisosVigentes, reservasAjenas, ruta, porCalles, miPos]);
 
   // Al plegar o desplegar el panel, el mapa cambia de tamaño: hay que avisarle
   // a Leaflet o se queda con el tamaño viejo y los pines salen corridos.
@@ -505,6 +546,12 @@ export default function Bardas() {
             <strong>{pendientes.length}</strong> pendientes ·{' '}
             <strong>{conPermiso}</strong> con permiso ·{' '}
             <strong>{visitadas - conPermiso}</strong> sin permiso
+            {reservasAjenas.size > 0 && (
+              <>
+                {' · '}
+                <strong>{reservasAjenas.size}</strong> 🔒 apartadas por otro equipo
+              </>
+            )}
           </p>
         )}
 
