@@ -54,6 +54,19 @@ para brigadistas, registro de material repartido.
   completo=1/medio=0.5, determinista); el plan se guarda en localStorage. Tocar
   "Planear ▸" manda la colonia a Planear vía contexto en App.jsx. Cobertura filtra
   por campaña y actividad.
+- BARDAS (jul 2026, fase de pintar bardas con el nombre del candidato): es OTRO
+  problema que el reparto de folletos — no hay que cubrir todas las calles de
+  una colonia, sino llegar a PUNTOS sueltos (posiblemente de varias colonias) a
+  pedirle permiso al dueño. Por eso NO usa partition.js: src/lib/bardas.js
+  ordena por "vecino más cercano" desde donde está parado el equipo (determinista).
+  El catálogo (public/bardas.json) sale del Excel que llena quien busca bardas
+  en carro: `node scripts/build-bardas.mjs "<ruta al .xlsx>"`. Ese Excel trae la
+  ubicación como LINK CORTO de Google Maps, no como coordenadas: el script las
+  resuelve leyendo solo la cabecera de redirección (redirect:'manual') — pedir
+  la página completa dispara el captcha de Google y devuelve 200 sin
+  coordenadas. También arregla los acentos (viene con doble codificación,
+  "UniÃ³n"). Las bardas sin link se listan aparte en la vista, por dirección.
+  El resultado de cada visita va a la tabla `bardas_permisos` de Supabase.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

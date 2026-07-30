@@ -7,9 +7,11 @@ import Brigadista from './views/Brigadista.jsx';
 import Historial from './views/Historial.jsx';
 import EnVivo from './views/EnVivo.jsx';
 import Cobertura from './views/Cobertura.jsx';
+import Bardas from './views/Bardas.jsx';
 
 const TABS = [
   { id: 'coordinador', titulo: 'Planear' },
+  { id: 'bardas', titulo: 'Bardas' },
   { id: 'envivo', titulo: 'En vivo' },
   { id: 'cobertura', titulo: 'Cobertura' },
   { id: 'historial', titulo: 'Historial' },
@@ -70,6 +72,7 @@ export default function App() {
       </header>
       {tab === 'brigadas' && <Brigadas onPlanear={planearColonia} />}
       {tab === 'coordinador' && <Coordinador contexto={contextoPlanear} />}
+      {tab === 'bardas' && <Bardas />}
       {tab === 'envivo' && <EnVivo />}
       {tab === 'cobertura' && <Cobertura />}
       {tab === 'historial' && <Historial />}

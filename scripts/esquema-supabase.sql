@@ -119,3 +119,48 @@ create policy "el relay de gps guarda puntos"
 
 create policy "el brigadista lee su rastro al reabrir"
   on rastro_nativo for select to anon using (true);
+
+-- ---------------------------------------------------------------------------
+-- Bardas (jul 2026): fase de pintar bardas con el nombre del candidato. Una
+-- persona recorre la ciudad en carro marcando bardas viables (eso llega en un
+-- Excel que se convierte a public/bardas.json con scripts/build-bardas.mjs);
+-- luego los equipos van a esas ubicaciones a PEDIR PERMISO al dueño.
+--
+-- Esta tabla guarda el RESULTADO de cada visita. El catálogo de bardas vive en
+-- el JSON (no cambia durante la jornada); aquí solo se registra a quién ya se
+-- le preguntó y qué contestó, para que la app sepa cuáles siguen pendientes.
+
+create table if not exists bardas_permisos (
+  -- Una fila por barda: si se vuelve a visitar, se actualiza la misma.
+  barda_id text primary key,
+  permiso boolean,            -- true = dejó pintar, false = no quiso
+  nombre text,                -- nombre del dueño / quien atendió
+  telefono text,
+  a_cambio text,              -- qué se ofreció (despensa, pintura, etc.)
+  notas text,
+  equipo text,                -- quién hizo la visita
+  campana text,
+  brigada text,
+  lat double precision,       -- dónde estaba el equipo al registrar
+  lng double precision,
+  actualizado timestamptz not null default now()
+);
+
+alter table bardas_permisos enable row level security;
+
+create policy "equipos registran permisos de barda"
+  on bardas_permisos for insert to anon with check (true);
+
+create policy "equipos corrigen el permiso de una barda"
+  on bardas_permisos for update to anon using (true) with check (true);
+
+create policy "todos ven que bardas ya se visitaron"
+  on bardas_permisos for select to anon using (true);
+
+-- Deshacer un registro equivocado (jul 2026): en campo es fácil tocar la barda
+-- de arriba en vez de la de abajo, y sin esto esa barda quedaría marcada como
+-- visitada para siempre — nadie iría a pedir permiso ahí. No se borra la fila
+-- (la tabla no permite DELETE desde el teléfono, a propósito): se marca como
+-- anulada y la app la vuelve a contar como pendiente, dejando el rastro de
+-- quién la anuló.
+alter table bardas_permisos add column if not exists anulado boolean not null default false;

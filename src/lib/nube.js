@@ -171,6 +171,57 @@ export async function leerRastroNativo(ruta, desde) {
   }
 }
 
+// ---------- bardas (jul 2026) ------------------------------------------------
+// El catálogo de bardas vive en public/bardas.json (no cambia en la jornada);
+// aquí solo se guarda el RESULTADO de cada visita, para que todos los equipos
+// sepan cuáles ya se preguntaron y no se repita el trabajo.
+
+export async function cargarPermisosBardas() {
+  if (!nubeConfigurada()) return [];
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/bardas_permisos?select=*&order=actualizado.desc&limit=2000`,
+    { headers: cabeceras() }
+  );
+  if (!res.ok) throw new Error('la nube respondió ' + res.status);
+  return res.json();
+}
+
+// Una fila por barda: si se vuelve a visitar, se actualiza la misma
+// (merge-duplicates sobre la llave primaria barda_id).
+export async function guardarPermisoBarda(p) {
+  if (!nubeConfigurada()) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_permisos`, {
+      method: 'POST',
+      headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ ...p, anulado: false, actualizado: new Date().toISOString() })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Deshacer un registro equivocado: la barda vuelve a contar como pendiente.
+// No se borra la fila (la tabla no permite DELETE desde el teléfono, a
+// propósito): se marca como anulada, dejando el rastro de que existió.
+export async function anularPermisoBarda(bardaId) {
+  if (!nubeConfigurada()) return false;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/bardas_permisos?barda_id=eq.${encodeURIComponent(bardaId)}`,
+      {
+        method: 'PATCH',
+        headers: { ...cabeceras(), Prefer: 'return=minimal' },
+        body: JSON.stringify({ anulado: true, actualizado: new Date().toISOString() })
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ---------- caché de calles compartido --------------------------------------
 // El primer teléfono que descarga una colonia de OpenStreetMap la guarda aquí;
 // los demás la leen de Supabase (rápido y confiable aunque OSM esté saturado).

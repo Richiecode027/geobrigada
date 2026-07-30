@@ -199,6 +199,22 @@ textarea { resize: vertical; }
   font-size: 0.85rem;
 }
 
+/* Pin de barda: número = orden de la ruta de hoy, ✓ = con permiso,
+   ✕ = ya se preguntó y dijeron que no. */
+.pin-barda { background: none; border: none; }
+.pin-barda div {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  font-size: 0.8rem;
+}
+
 .flecha-ruta { background: none; border: none; }
 .flecha-ruta div {
   font-size: 13px;
