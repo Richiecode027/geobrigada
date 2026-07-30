@@ -76,3 +76,72 @@ export function rutaDeBardas(origen, pendientes, limite = 15) {
 export function largoDeRuta(ruta) {
   return ruta.reduce((s, b) => s + (b.metrosDesdeAnterior || 0), 0);
 }
+
+// --- ruta POR CALLES REALES -------------------------------------------------
+// La versión de arriba ordena por distancia en línea recta (rápida, pero no
+// sabe de calles: dos bardas pueden estar cerca "a vuelo de pájaro" y lejos
+// caminando, p. ej. separadas por una barranca o una avenida sin cruce).
+// Esta baja las calles de la zona y ordena por lo que de verdad hay que
+// caminar, y además devuelve el trazo para dibujarlo sobre el mapa.
+//
+// Devuelve { ruta, porCalles }. Si no se pudieron bajar las calles (sin señal,
+// Overpass caído), regresa la ruta en línea recta con porCalles = false: la
+// jornada no se detiene por eso.
+export async function rutaDeBardasPorCalles(origen, pendientes, limite = 15) {
+  // Primero se acota con línea recta: así el área de calles a descargar es la
+  // mínima necesaria (pedir toda la ciudad sería lentísimo).
+  const candidatas = rutaDeBardas(origen, pendientes, limite);
+  if (candidatas.length === 0) return { ruta: [], porCalles: false };
+
+  let red = null;
+  try {
+    const { redParaPuntos } = await import('./ruteo.js');
+    red = await redParaPuntos([origen, ...candidatas.map((b) => [b.lat, b.lng])]);
+  } catch {
+    red = null; // sin calles: se sigue con la ruta en línea recta
+  }
+  if (!red) return { ruta: candidatas, porCalles: false };
+
+  const { caminosDesde } = await import('./ruteo.js');
+  const restantes = candidatas.slice();
+  const orden = [];
+  let desde = origen;
+
+  while (restantes.length > 0) {
+    const caminos = caminosDesde(
+      red,
+      desde,
+      restantes.map((b) => [b.lat, b.lng])
+    );
+    // La más cercana CAMINANDO; si alguna quedó sin camino (calle aislada),
+    // se decide por línea recta para no dejarla fuera de la jornada.
+    let iMejor = -1, mejor = null;
+    for (let i = 0; i < restantes.length; i++) {
+      const c = caminos.get(i);
+      if (!c) continue;
+      if (mejor === null || c.metros < mejor.metros ||
+          (c.metros === mejor.metros && restantes[i].id < restantes[iMejor].id)) {
+        mejor = c;
+        iMejor = i;
+      }
+    }
+    if (iMejor === -1) {
+      // Ninguna alcanzable por calle: se toma la más cercana en línea recta.
+      let dMejor = Infinity;
+      for (let i = 0; i < restantes.length; i++) {
+        const d = haversine(desde, [restantes[i].lat, restantes[i].lng]);
+        if (d < dMejor) { dMejor = d; iMejor = i; }
+      }
+      mejor = { metros: Math.round(dMejor), linea: null };
+    }
+    const elegida = restantes.splice(iMejor, 1)[0];
+    orden.push({
+      ...elegida,
+      metrosDesdeAnterior: mejor.metros,
+      // Trazo por calles desde la barda anterior (null = no se pudo rutear).
+      trazo: mejor.linea
+    });
+    desde = [elegida.lat, elegida.lng];
+  }
+  return { ruta: orden, porCalles: true };
+}

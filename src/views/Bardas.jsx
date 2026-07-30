@@ -2,12 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
 import { iniciarGPS } from '../lib/gps.js';
-import { haversine } from '../lib/geo.js';
 import {
   cargarBardas,
   bardasPendientes,
   bardasSinUbicacion,
-  rutaDeBardas,
+  rutaDeBardasPorCalles,
   largoDeRuta
 } from '../lib/bardas.js';
 import {
@@ -17,15 +16,18 @@ import {
   anularPermisoBarda
 } from '../lib/nube.js';
 
-// Cuántas bardas propone la ruta de una jornada.
-const BARDAS_POR_RUTA = 15;
+const CANTIDAD_SUGERIDA = 10;
 
 function metrosBonito(m) {
   return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
-// Pin numerado: verde = ya con permiso, rojo = ya visitada sin permiso,
-// azul = pendiente (el número es el orden de la ruta propuesta).
+// Quita acentos y mayúsculas para buscar sin que estorben.
+const normalizar = (s) =>
+  String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Pin numerado: verde = con permiso, rojo = sin permiso, azul = en la ruta de
+// hoy (con su número de orden), gris = pendiente pero fuera de la ruta.
 function pinBarda(latlng, texto, color) {
   return L.marker(latlng, {
     icon: L.divIcon({
@@ -43,6 +45,7 @@ export default function Bardas() {
   const capaBardas = useRef(null);
   const capaYo = useRef(null);
   const detenerGPS = useRef(null);
+  const yaCalculada = useRef(false);
 
   const [todas, setTodas] = useState([]);
   const [permisos, setPermisos] = useState([]);
@@ -50,8 +53,18 @@ export default function Bardas() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
+
+  // 'config' = antes de empezar (equipo, cuántas bardas) · 'recorrido' = en camino
+  const [fase, setFase] = useState('config');
   const [equipo, setEquipo] = useState('');
-  // Barda que se está registrando ahora mismo (abre el formulario).
+  const [cantidad, setCantidad] = useState(String(CANTIDAD_SUGERIDA));
+  const [ruta, setRuta] = useState([]);
+  const [porCalles, setPorCalles] = useState(false);
+  const [calculando, setCalculando] = useState(false);
+
+  // Buscador para marcar una barda que alguien hizo SIN la app.
+  const [busqueda, setBusqueda] = useState('');
+
   const [registrando, setRegistrando] = useState(null);
   const [form, setForm] = useState({ permiso: null, nombre: '', telefono: '', aCambio: '', notas: '' });
   const [guardando, setGuardando] = useState(false);
@@ -66,8 +79,9 @@ export default function Bardas() {
           try {
             setPermisos(await cargarPermisosBardas());
           } catch {
-            setError('No se pudo leer de la nube qué bardas ya se visitaron; ' +
-              'se muestran todas como pendientes.');
+            setError(
+              'No se pudo leer de la nube qué bardas ya se visitaron; se muestran todas como pendientes.'
+            );
           }
         }
       } catch (e) {
@@ -75,36 +89,62 @@ export default function Bardas() {
       }
       setCargando(false);
     })();
+    return () => {
+      if (detenerGPS.current) detenerGPS.current();
+    };
   }, []);
 
-  // --- GPS: la ruta se arma desde donde está parado el equipo --------------
-  useEffect(() => {
+  const permisosVigentes = useMemo(() => permisos.filter((p) => !p.anulado), [permisos]);
+  const pendientes = useMemo(() => bardasPendientes(todas, permisos), [todas, permisos]);
+  const sinUbicacion = useMemo(() => bardasSinUbicacion(todas, permisos), [todas, permisos]);
+  const visitadas = permisosVigentes.length;
+  const conPermiso = permisosVigentes.filter((p) => p.permiso).length;
+
+  // --- empezar el recorrido (solo al tocar el botón) -----------------------
+  function iniciarRecorrido() {
+    setError('');
+    setGpsError('');
+    yaCalculada.current = false;
+    setCalculando(true);
+    setFase('recorrido');
     detenerGPS.current = iniciarGPS(
       'bardas',
       (p) => {
         setMiPos([p.lat, p.lng]);
         setGpsError('');
       },
-      (msg) => setGpsError(msg)
+      (msg) => {
+        setGpsError(msg);
+        setCalculando(false);
+      }
     );
-    return () => {
-      if (detenerGPS.current) detenerGPS.current();
-    };
-  }, []);
+  }
 
-  const pendientes = useMemo(() => bardasPendientes(todas, permisos), [todas, permisos]);
-  const sinUbicacion = useMemo(() => bardasSinUbicacion(todas, permisos), [todas, permisos]);
+  // Con la primera ubicación se arma la ruta (una sola vez: si se recalculara
+  // a cada paso del GPS, el orden cambiaría mientras el equipo camina).
+  useEffect(() => {
+    if (fase !== 'recorrido' || !miPos || yaCalculada.current || pendientes.length === 0) return;
+    yaCalculada.current = true;
+    (async () => {
+      setCalculando(true);
+      const cuantas = Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA);
+      const r = await rutaDeBardasPorCalles(miPos, pendientes, cuantas);
+      setRuta(r.ruta);
+      setPorCalles(r.porCalles);
+      setCalculando(false);
+    })();
+  }, [fase, miPos, pendientes, cantidad]);
 
-  // Ruta propuesta: las más cercanas primero, desde mi ubicación.
-  const ruta = useMemo(
-    () => (miPos ? rutaDeBardas(miPos, pendientes, BARDAS_POR_RUTA) : []),
-    [miPos, pendientes]
-  );
-
-  // Los registros anulados (se tocó la barda equivocada) no cuentan.
-  const permisosVigentes = useMemo(() => permisos.filter((p) => !p.anulado), [permisos]);
-  const visitadas = permisosVigentes.length;
-  const conPermiso = permisosVigentes.filter((p) => p.permiso).length;
+  // Rehace la ruta con lo que queda pendiente (al registrar o al pedir otras).
+  async function recalcular() {
+    if (!miPos) return;
+    setCalculando(true);
+    const cuantas = Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA);
+    const r = await rutaDeBardasPorCalles(miPos, pendientes, cuantas);
+    setRuta(r.ruta);
+    setPorCalles(r.porCalles);
+    setCalculando(false);
+  }
 
   // --- mapa ----------------------------------------------------------------
   useEffect(() => {
@@ -118,7 +158,7 @@ export default function Bardas() {
       if (b.lat == null) continue;
       const visita = porId.get(String(b.id));
       const orden = enRuta.get(String(b.id));
-      let color = '#9aa5b1'; // pendiente pero fuera de la ruta de hoy
+      let color = '#9aa5b1';
       let texto = '';
       if (visita) {
         color = visita.permiso ? '#2a9d3a' : '#c1121f';
@@ -132,24 +172,27 @@ export default function Bardas() {
           `<strong>${b.direccion || 'Barda ' + b.id}</strong><br>${b.colonia || ''}` +
             (visita ? `<br>${visita.permiso ? '✅ Con permiso' : '❌ Sin permiso'}` : '')
         )
-        // También se abre si ya se visitó: para corregir o deshacer el registro.
         .on('click', () => abrirRegistro(b))
         .addTo(g);
     }
 
-    // Línea del recorrido propuesto, desde mi ubicación.
-    if (miPos && ruta.length > 0) {
-      L.polyline([miPos, ...ruta.map((b) => [b.lat, b.lng])], {
-        color: '#1d6fd1',
-        weight: 3,
-        opacity: 0.6,
-        dashArray: '6 6'
-      }).addTo(g);
+    // Trazo del recorrido: por calles reales si se pudieron descargar; si no,
+    // línea punteada directa (se avisa en el panel para no engañar).
+    if (ruta.length > 0) {
+      for (const b of ruta) {
+        if (b.trazo && b.trazo.length > 1) {
+          L.polyline(b.trazo, { color: '#1d6fd1', weight: 4, opacity: 0.75 }).addTo(g);
+        }
+      }
+      if (!porCalles && miPos) {
+        L.polyline([miPos, ...ruta.map((b) => [b.lat, b.lng])], {
+          color: '#1d6fd1', weight: 3, opacity: 0.5, dashArray: '6 6'
+        }).addTo(g);
+      }
     }
     capaBardas.current = g;
-  }, [map, todas, permisos, ruta, miPos]);
+  }, [map, todas, permisosVigentes, ruta, porCalles, miPos]);
 
-  // Mi ubicación (punto azul), sin pelear con el zoom del usuario.
   useEffect(() => {
     if (!map || !miPos) return;
     if (capaYo.current) capaYo.current.remove();
@@ -160,21 +203,18 @@ export default function Bardas() {
     capaYo.current = g;
   }, [map, miPos]);
 
-  // Encuadra una sola vez, cuando ya hay ruta que mostrar.
-  const encuadrado = useRef(false);
+  // Encuadra al armarse la ruta (una vez por ruta nueva).
+  const encuadrado = useRef(0);
   useEffect(() => {
-    if (!map || encuadrado.current || ruta.length === 0 || !miPos) return;
+    if (!map || ruta.length === 0 || !miPos || encuadrado.current === ruta.length) return;
     map.invalidateSize({ animate: false });
     map.fitBounds(L.latLngBounds([miPos, ...ruta.map((b) => [b.lat, b.lng])]), {
-      padding: [40, 40],
-      animate: false
+      padding: [40, 40], animate: false
     });
-    encuadrado.current = true;
+    encuadrado.current = ruta.length;
   }, [map, ruta, miPos]);
 
   // --- registrar el permiso -------------------------------------------------
-  // Si la barda ya se había registrado, se abre con sus datos: así se puede
-  // corregir lo que se escribió mal o deshacer el registro completo.
   function abrirRegistro(b) {
     const previo = permisosVigentes.find((p) => String(p.barda_id) === String(b.id));
     setRegistrando({ ...b, previo: previo || null });
@@ -211,17 +251,16 @@ export default function Bardas() {
       setError('No se pudo guardar en la nube (¿sin señal?). Intenta de nuevo.');
       return;
     }
-    // Se refleja de inmediato: la barda sale de pendientes y la ruta se recalcula.
     setPermisos((p) => [...p.filter((x) => String(x.barda_id) !== fila.barda_id), fila]);
+    // Sale de la ruta de hoy; el resto conserva su orden (no se recalcula sola
+    // para no cambiarle el camino al equipo a media jornada).
+    setRuta((r) => r.filter((b) => String(b.id) !== fila.barda_id));
     setRegistrando(null);
     setError('');
   }
 
-  // Deshacer un registro equivocado: la barda vuelve a la lista de pendientes.
   async function deshacer(bardaId) {
-    if (!window.confirm('¿Quitar este registro? La barda volverá a la lista de pendientes.')) {
-      return;
-    }
+    if (!window.confirm('¿Quitar este registro? La barda volverá a la lista de pendientes.')) return;
     setGuardando(true);
     const ok = await anularPermisoBarda(String(bardaId));
     setGuardando(false);
@@ -237,13 +276,22 @@ export default function Bardas() {
   }
 
   function comoLlegar(b) {
-    // Con coordenadas se abre la navegación al punto exacto; sin ellas, se
-    // busca por dirección y colonia (es lo único que se tiene de esa barda).
     const destino = b.lat != null
       ? `${b.lat},${b.lng}`
       : encodeURIComponent(`${b.direccion || ''} ${b.colonia || ''} Morelia Michoacán`);
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${destino}`, '_blank');
   }
+
+  // --- buscador para marcar una barda hecha sin la app ---------------------
+  const resultados = useMemo(() => {
+    const q = normalizar(busqueda).trim();
+    if (q.length < 2) return [];
+    return todas
+      .filter((b) => normalizar(b.direccion + ' ' + b.colonia + ' ' + b.id).includes(q))
+      .slice(0, 12);
+  }, [busqueda, todas]);
+
+  const estadoDe = (b) => permisosVigentes.find((p) => String(p.barda_id) === String(b.id));
 
   // --- render ---------------------------------------------------------------
   return (
@@ -257,14 +305,17 @@ export default function Bardas() {
         {gpsError && <div className="error">{gpsError}</div>}
 
         {!cargando && (
-          <>
-            <p style={{ fontSize: '0.9rem' }}>
-              <strong>{pendientes.length}</strong> pendientes ·{' '}
-              <strong>{conPermiso}</strong> con permiso ·{' '}
-              <strong>{visitadas - conPermiso}</strong> sin permiso
-            </p>
+          <p style={{ fontSize: '0.9rem' }}>
+            <strong>{pendientes.length}</strong> pendientes ·{' '}
+            <strong>{conPermiso}</strong> con permiso ·{' '}
+            <strong>{visitadas - conPermiso}</strong> sin permiso
+          </p>
+        )}
 
-            <label className="etiqueta">Tu equipo (para saber quién registró)</label>
+        {/* ---------- ANTES DE EMPEZAR ---------- */}
+        {!cargando && fase === 'config' && (
+          <>
+            <label className="etiqueta">Tu equipo</label>
             <input
               type="text"
               autoComplete="off"
@@ -272,10 +323,42 @@ export default function Bardas() {
               onChange={(e) => setEquipo(e.target.value)}
             />
 
-            {!miPos && !gpsError && (
+            <label className="etiqueta">Cantidad de bardas por hacer hoy</label>
+            <input
+              type="number"
+              autoComplete="off"
+              min="1"
+              max={Math.max(1, pendientes.length)}
+              value={cantidad}
+              onChange={(e) => setCantidad(e.target.value)}
+            />
+            <p className="nota" style={{ marginTop: 0 }}>
+              Se te arma la ruta con esas bardas, las más cercanas a donde estés.
+            </p>
+
+            <div className="fila" style={{ marginTop: 10 }}>
+              <button
+                className="boton primario"
+                onClick={iniciarRecorrido}
+                disabled={pendientes.length === 0}
+              >
+                🚀 Iniciar recorrido
+              </button>
+            </div>
+            {pendientes.length === 0 && (
+              <div className="aviso" style={{ background: '#f0f6ee', borderColor: '#cde3c8' }}>
+                🎉 ¡Ya se preguntó en todas las bardas del listado!
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ---------- EN RECORRIDO ---------- */}
+        {fase === 'recorrido' && (
+          <>
+            {calculando && (
               <div className="aviso">
-                📡 Buscando tu ubicación… en cuanto la tenga, te armo la ruta con las
-                bardas más cercanas.
+                ⏳ {miPos ? 'Trazando la ruta por las calles…' : 'Buscando tu ubicación…'}
               </div>
             )}
 
@@ -285,8 +368,9 @@ export default function Bardas() {
                   Tu ruta de hoy ({ruta.length} bardas · {metrosBonito(largoDeRuta(ruta))})
                 </h3>
                 <p className="nota" style={{ marginTop: 0 }}>
-                  Van de la más cercana a la más lejana desde donde estás. Toca una para
-                  registrar si te dieron permiso.
+                  {porCalles
+                    ? 'Distancias y trazo por calles reales, de la más cercana a la más lejana.'
+                    : 'No se pudieron bajar las calles (¿sin señal?): el orden y las distancias son en línea recta.'}
                 </p>
                 <ul className="lista-calles">
                   {ruta.map((b, i) => (
@@ -304,62 +388,110 @@ export default function Bardas() {
                     </li>
                   ))}
                 </ul>
+                <div className="fila" style={{ marginTop: 8 }}>
+                  <button className="boton suave mini" onClick={recalcular} disabled={calculando}>
+                    🔄 Recalcular desde donde estoy
+                  </button>
+                </div>
               </>
             )}
 
-            {miPos && pendientes.length === 0 && (
+            {!calculando && ruta.length === 0 && miPos && (
               <div className="aviso" style={{ background: '#f0f6ee', borderColor: '#cde3c8' }}>
-                🎉 ¡Ya se preguntó en todas las bardas del listado!
+                ✅ Terminaste tu ruta.
+                <div className="fila" style={{ marginTop: 8 }}>
+                  <button className="boton primario mini" onClick={recalcular}>
+                    Pedir otras {Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA)} bardas
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Bardas que no traían ubicación: no salen en el mapa ni en la
-                ruta, pero hay que ir igual, así que se listan por dirección. */}
-            {sinUbicacion.length > 0 && (
-              <>
-                <h3>Sin ubicación en el mapa ({sinUbicacion.length})</h3>
-                <p className="nota" style={{ marginTop: 0 }}>
-                  A estas no se les puso link de mapa al capturarlas: hay que
-                  buscarlas por la dirección.
-                </p>
-                <ul className="lista-calles">
-                  {sinUbicacion.map((b) => (
-                    <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
-                      <span>
-                        {b.direccion || 'Barda ' + b.id}
-                        <br />
-                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                          {b.colonia}
-                          {b.referencia && !/^https?:/.test(b.referencia)
-                            ? ` · ${b.referencia}`
-                            : ''}
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
+            <div className="fila" style={{ marginTop: 6 }}>
+              <button
+                className="boton suave mini"
+                onClick={() => {
+                  if (detenerGPS.current) detenerGPS.current();
+                  detenerGPS.current = null;
+                  setFase('config');
+                  setRuta([]);
+                }}
+              >
+                ⏹ Terminar recorrido
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ---------- MARCAR UNA BARDA HECHA SIN LA APP ---------- */}
+        {!cargando && (
+          <>
+            <h3>¿Ya se hizo una barda sin la app?</h3>
+            <p className="nota" style={{ marginTop: 0 }}>
+              Búscala por dirección o colonia y márcala, aunque no esté en tu ruta.
+            </p>
+            <input
+              type="text"
+              autoComplete="off"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+            {resultados.map((b) => {
+              const est = estadoDe(b);
+              return (
+                <div key={b.id} className="resultado" onClick={() => abrirRegistro(b)}>
+                  <strong>{b.direccion || 'Barda ' + b.id}</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                    {b.colonia}
+                    {est ? (est.permiso ? ' · ✅ con permiso' : ' · ❌ sin permiso') : ' · pendiente'}
+                    {b.lat == null ? ' · sin ubicación' : ''}
+                  </div>
+                </div>
+              );
+            })}
+            {busqueda.trim().length >= 2 && resultados.length === 0 && (
+              <div className="aviso">No hay bardas que coincidan con «{busqueda}».</div>
             )}
           </>
         )}
 
-        {/* --- formulario de la barda seleccionada --- */}
+        {/* ---------- BARDAS SIN UBICACIÓN ---------- */}
+        {!cargando && sinUbicacion.length > 0 && (
+          <>
+            <h3>Sin ubicación en el mapa ({sinUbicacion.length})</h3>
+            <p className="nota" style={{ marginTop: 0 }}>
+              A estas no se les puso link de mapa al capturarlas: hay que buscarlas por
+              la dirección.
+            </p>
+            <ul className="lista-calles">
+              {sinUbicacion.map((b) => (
+                <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
+                  <span>
+                    {b.direccion || 'Barda ' + b.id}
+                    <br />
+                    <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                      {b.colonia}
+                      {b.referencia && !/^https?:/.test(b.referencia) ? ` · ${b.referencia}` : ''}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {/* ---------- FORMULARIO ---------- */}
         {registrando && (
           <div className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1', marginTop: 12 }}>
             <strong>{registrando.direccion || 'Barda ' + registrando.id}</strong>
-            <div className="datos">
-              {registrando.colonia}
-              {registrando.referencia ? ' · ' : ''}
-            </div>
+            <div className="datos">{registrando.colonia}</div>
 
-            {/* Ya registrada: se puede corregir lo escrito o deshacerlo todo. */}
             {registrando.previo && (
               <div className="aviso" style={{ background: '#fff8e6', borderColor: '#f0d9a0' }}>
                 Esta barda ya se registró como{' '}
                 <strong>{registrando.previo.permiso ? 'CON permiso' : 'SIN permiso'}</strong>
                 {registrando.previo.equipo ? ` (${registrando.previo.equipo})` : ''}. Puedes
-                corregir los datos y volver a guardar, o quitar el registro si fue
-                por error.
+                corregir los datos y volver a guardar, o quitar el registro si fue por error.
               </div>
             )}
 
