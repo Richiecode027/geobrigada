@@ -369,9 +369,19 @@ export default function Bardas() {
                 </h3>
                 <p className="nota" style={{ marginTop: 0 }}>
                   {porCalles
-                    ? 'Distancias y trazo por calles reales, de la más cercana a la más lejana.'
+                    ? 'Distancias y trazo por calles reales. Se eligió la zona con más bardas juntas cerca de ti.'
                     : 'No se pudieron bajar las calles (¿sin señal?): el orden y las distancias son en línea recta.'}
                 </p>
+                {/* Si no hay bardas cerca, el primer tramo es largo: mejor
+                    decirlo de frente que dejar al equipo descubrirlo caminando. */}
+                {ruta[0] && ruta[0].metrosDesdeAnterior > 1200 && (
+                  <div className="aviso">
+                    🚗 La barda más cercana está a{' '}
+                    <strong>{metrosBonito(ruta[0].metrosDesdeAnterior)}</strong> de donde
+                    estás: conviene trasladarse hasta allá. Ya en la zona, las demás
+                    quedan a pocos metros entre sí.
+                  </div>
+                )}
                 <ul className="lista-calles">
                   {ruta.map((b, i) => (
                     <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>

@@ -42,24 +42,54 @@ export function bardasSinUbicacion(bardas, permisos) {
   return bardas.filter((b) => b.lat == null && !ya.has(String(b.id)));
 }
 
-// Ordena las bardas para visitarlas caminando/manejando lo menos posible:
-// desde `origen` toma la más cercana, desde ahí la siguiente más cercana, y
-// así. Es el método del "vecino más cercano": no es el óptimo absoluto, pero
-// es inmediato y da rutas sensatas. Determinista: con los mismos datos y el
-// mismo origen, siempre sale el mismo orden.
+// Elige QUÉ bardas hacer hoy: una ZONA COMPACTA, no las que vayan quedando
+// cerca una de otra en cadena.
 //
-// `limite` corta la lista a las primeras N (una jornada no alcanza para 160).
-export function rutaDeBardas(origen, pendientes, limite = 15) {
-  const restantes = pendientes.slice();
+// Por qué: el método de "la siguiente más cercana" se mete en un grupo, lo
+// agota y luego tiene que dar un salto enorme al siguiente grupo — en Morelia
+// eso significaba cruzar la ciudad a media jornada. Aquí se prueban varias
+// zonas de arranque (las bardas más cercanas al equipo) y se elige la que deje
+// el recorrido total más corto: así se trabaja una zona y se camina poco entre
+// barda y barda. Determinista.
+// Cuántas zonas distintas se prueban antes de decidir (más = mejor ruta pero
+// más cálculo; con 15 basta y es instantáneo).
+const SEMILLAS = 15;
+
+export function zonaDeTrabajo(origen, pendientes, cuantas) {
+  if (pendientes.length === 0) return [];
+  if (pendientes.length <= cuantas) return pendientes.slice();
+
+  const dist = (a, b) => haversine([a.lat ?? a[0], a.lng ?? a[1]], [b.lat, b.lng]);
+  const cercanasAlEquipo = pendientes
+    .map((b) => ({ b, d: haversine(origen, [b.lat, b.lng]) }))
+    .sort((x, y) => x.d - y.d || (x.b.id < y.b.id ? -1 : 1))
+    .slice(0, SEMILLAS)
+    .map((x) => x.b);
+
+  let mejor = null;
+  for (const semilla of cercanasAlEquipo) {
+    // Las `cuantas` bardas más pegadas a esa semilla forman la zona candidata.
+    const zona = pendientes
+      .map((b) => ({ b, d: dist(semilla, b) }))
+      .sort((x, y) => x.d - y.d || (x.b.id < y.b.id ? -1 : 1))
+      .slice(0, cuantas)
+      .map((x) => x.b);
+    const costo = largoDeRuta(ordenarPorCercania(origen, zona));
+    if (mejor === null || costo < mejor.costo) mejor = { zona, costo };
+  }
+  return mejor.zona;
+}
+
+// Ordena un conjunto ya elegido: desde `origen`, siempre la más cercana.
+// Determinista (los empates se rompen por id).
+export function ordenarPorCercania(origen, bardas) {
+  const restantes = bardas.slice();
   const orden = [];
   let desde = origen;
-
-  while (restantes.length > 0 && orden.length < limite) {
-    let iMejor = 0;
-    let dMejor = Infinity;
+  while (restantes.length > 0) {
+    let iMejor = 0, dMejor = Infinity;
     for (let i = 0; i < restantes.length; i++) {
       const d = haversine(desde, [restantes[i].lat, restantes[i].lng]);
-      // El empate se rompe por id, para que el orden no dependa del azar.
       if (d < dMejor - 1e-9 || (Math.abs(d - dMejor) <= 1e-9 && restantes[i].id < restantes[iMejor].id)) {
         dMejor = d;
         iMejor = i;
@@ -70,6 +100,12 @@ export function rutaDeBardas(origen, pendientes, limite = 15) {
     desde = [elegida.lat, elegida.lng];
   }
   return orden;
+}
+
+// Ruta de la jornada en línea recta: elige la zona compacta y la ordena.
+// (El trazo por calles reales lo hace rutaDeBardasPorCalles, más abajo.)
+export function rutaDeBardas(origen, pendientes, limite = 15) {
+  return ordenarPorCercania(origen, zonaDeTrabajo(origen, pendientes, limite));
 }
 
 // Metros totales del recorrido propuesto (sin contar el regreso).
@@ -88,8 +124,9 @@ export function largoDeRuta(ruta) {
 // Overpass caído), regresa la ruta en línea recta con porCalles = false: la
 // jornada no se detiene por eso.
 export async function rutaDeBardasPorCalles(origen, pendientes, limite = 15) {
-  // Primero se acota con línea recta: así el área de calles a descargar es la
-  // mínima necesaria (pedir toda la ciudad sería lentísimo).
+  // Primero se decide la ZONA de hoy en línea recta (rápido) — así el área de
+  // calles a descargar es la mínima necesaria y las bardas quedan juntas.
+  // Después el ruteo real solo reordena y traza dentro de esa zona.
   const candidatas = rutaDeBardas(origen, pendientes, limite);
   if (candidatas.length === 0) return { ruta: [], porCalles: false };
 
