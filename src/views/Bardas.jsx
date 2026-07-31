@@ -5,6 +5,11 @@ import { iniciarGPS, obtenerPosicionActual } from '../lib/gps.js';
 import { registrarAtras } from '../lib/atras.js';
 import { comprimirImagen } from '../lib/imagen.js';
 import { coordsDeLinkMaps } from '../lib/mapsLink.js';
+import { ubicacionAproximada } from '../lib/ubicacion.js';
+import { seguirBrujula, pedirPermisoBrujula } from '../lib/brujula.js';
+// Solo las etiquetas y la función: la librería pesada (xlsx) se carga dentro
+// de descargarCorteBardas, hasta que alguien toca el botón.
+import { FILTROS as FILTROS_CORTE, descargarCorteBardas } from '../lib/corteBardas.js';
 import {
   cargarBardas,
   bardasPendientes,
@@ -135,6 +140,8 @@ export default function Bardas() {
   const [permisos, setPermisos] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [miPos, setMiPos] = useState(null);
+  // Grados a los que mira el teléfono (null si no tiene brújula).
+  const [rumbo, setRumbo] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
@@ -161,13 +168,20 @@ export default function Bardas() {
   const [panelPlegado, setPanelPlegado] = useState(false);
 
   const [registrando, setRegistrando] = useState(null);
-  const [form, setForm] = useState({ estado: null, nombre: '', telefono: '', aCambio: '', notas: '' });
+  const [form, setForm] = useState({
+    estado: null, nombre: '', telefono: '', aCambio: '', notas: '', equipo: ''
+  });
   const [guardando, setGuardando] = useState(false);
   const [exportando, setExportando] = useState(false);
+  const [filtroCorte, setFiltroCorte] = useState('todo');
 
   // Agregar una barda que no está en el catálogo (la encontró el equipo en la calle).
   const [agregando, setAgregando] = useState(false);
-  const [formNueva, setFormNueva] = useState({ direccion: '', colonia: '', archivo: null, previewUrl: null });
+  const [formNueva, setFormNueva] = useState({
+    direccion: '', colonia: '', distrito: '', archivo: null, previewUrl: null
+  });
+  const [autollenando, setAutollenando] = useState(false);
+  const [comoSeDedujo, setComoSeDedujo] = useState('');
   const [posNueva, setPosNueva] = useState(null);
   const [gpsNuevaError, setGpsNuevaError] = useState('');
   const [guardandoNueva, setGuardandoNueva] = useState(false);
@@ -266,6 +280,32 @@ export default function Bardas() {
     }
   }, [equipo, cantidad, fase, ruta, porCalles, sesionPrevia]);
 
+  // El GPS lo maneja este efecto y nadie más. Fuera de recorrido va en modo
+  // ligero (sin notificación permanente) porque ver dónde estás parado y hacia
+  // dónde ves ayuda aunque no traigas ruta; durante el recorrido pasa a modo
+  // completo, que sigue registrando con la pantalla apagada.
+  useEffect(() => {
+    arrancarGPS({ segundoPlano: fase === 'recorrido' });
+    return () => {
+      if (detenerGPS.current) detenerGPS.current();
+      detenerGPS.current = null;
+    };
+  }, [fase]);
+
+  // Hacia dónde apunta el teléfono, para girar la flecha del mapa.
+  useEffect(() => {
+    let dejarDeSeguir = () => {};
+    let vivo = true;
+    pedirPermisoBrujula().then((ok) => {
+      if (!vivo || !ok) return;
+      dejarDeSeguir = seguirBrujula(setRumbo);
+    });
+    return () => {
+      vivo = false;
+      dejarDeSeguir();
+    };
+  }, []);
+
   // Renueva la reserva mientras el equipo sigue caminando: dura poco a
   // propósito, así el que desaparece la suelta pronto y el que sigue ahí no
   // la pierde.
@@ -278,7 +318,8 @@ export default function Bardas() {
     return () => clearInterval(id);
   }, [fase, ruta, equipo]);
 
-  function arrancarGPS() {
+  function arrancarGPS({ segundoPlano = true } = {}) {
+    if (detenerGPS.current) detenerGPS.current();
     detenerGPS.current = iniciarGPS(
       'bardas',
       (p) => {
@@ -288,7 +329,8 @@ export default function Bardas() {
       (msg) => {
         setGpsError(msg);
         setCalculando(false);
-      }
+      },
+      { segundoPlano }
     );
   }
 
@@ -303,11 +345,10 @@ export default function Bardas() {
     setRuta(rutaViva);
     setPorCalles(Boolean(guardada.porCalles));
     yaCalculada.current = true;
-    setFase('recorrido');
+    setFase('recorrido'); // el efecto del GPS lo pasa solo a modo completo
     setError('');
     setGpsError('');
     reservarBardas(rutaViva.map((b) => b.id), equipo.trim()); // vuelve a apartarlas
-    arrancarGPS();
   }
 
   // No quiere retomar: se sueltan esas bardas en el acto para que otro equipo
@@ -321,11 +362,9 @@ export default function Bardas() {
   }
 
   function terminarRecorrido() {
-    if (detenerGPS.current) detenerGPS.current();
-    detenerGPS.current = null;
     if (ruta.length > 0) liberarReservasBardas(ruta.map((b) => b.id));
     borrarSesion();
-    setFase('config');
+    setFase('config'); // el efecto del GPS regresa solo a modo ligero
     setRuta([]);
   }
 
@@ -361,12 +400,14 @@ export default function Bardas() {
   function abrirAgregar() {
     setError('');
     setAgregando(true);
-    setFormNueva({ direccion: '', colonia: '', archivo: null, previewUrl: null });
+    setFormNueva({ direccion: '', colonia: '', distrito: '', archivo: null, previewUrl: null });
     setPosNueva(null);
     setGpsNuevaError('');
     setLinkNueva('');
     setLinkNuevaError('');
+    setComoSeDedujo('');
     posDeLinkRef.current = false;
+    ubicacionResuelta.current = null;
     obtenerPosicionActual()
       .then((p) => {
         if (posDeLinkRef.current) return;
@@ -382,6 +423,44 @@ export default function Bardas() {
     if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
     setAgregando(false);
   }
+
+  // Con la ubicación ya se puede saber casi todo: la colonia sale del catálogo
+  // del INEGI que trae la app, el distrito se deduce de las bardas ya
+  // capturadas y la calle la da OpenStreetMap. Solo se rellena lo que esté
+  // vacío: si el equipo ya escribió algo, manda lo que escribió.
+  const ubicacionResuelta = useRef(null);
+  useEffect(() => {
+    if (!agregando || !posNueva) return;
+    const clave = posNueva.join(',');
+    if (ubicacionResuelta.current === clave) return;
+    ubicacionResuelta.current = clave;
+
+    let cancelado = false;
+    setAutollenando(true);
+    setComoSeDedujo('');
+    ubicacionAproximada(posNueva[0], posNueva[1], todas)
+      .then((u) => {
+        if (cancelado) return;
+        setFormNueva((f) => ({
+          ...f,
+          direccion: f.direccion || u.calle,
+          colonia: f.colonia || u.colonia,
+          distrito: f.distrito || u.distrito
+        }));
+        const partes = [];
+        if (u.colonia) partes.push('colonia');
+        if (u.calle) partes.push('calle');
+        if (u.distrito) partes.push(`distrito (según ${u.distritoSegun})`);
+        setComoSeDedujo(partes.length ? 'Se llenó sola la ' + partes.join(', ') + '.' : '');
+      })
+      .finally(() => {
+        if (!cancelado) setAutollenando(false);
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [agregando, posNueva, todas]);
 
   async function usarLink() {
     if (!linkNueva.trim()) return;
@@ -415,7 +494,7 @@ export default function Bardas() {
       id,
       direccion: formNueva.direccion.trim() || null,
       colonia: formNueva.colonia.trim() || null,
-      distrito: null,
+      distrito: formNueva.distrito.trim() || null,
       lat: posNueva[0],
       lng: posNueva[1],
       foto,
@@ -438,8 +517,7 @@ export default function Bardas() {
     setGpsError('');
     yaCalculada.current = false;
     setCalculando(true);
-    setFase('recorrido');
-    arrancarGPS();
+    setFase('recorrido'); // el efecto del GPS lo pasa solo a modo completo
   }
 
   // Bardas pendientes que NINGÚN OTRO equipo trae ya en su ruta: se consulta
@@ -554,15 +632,37 @@ export default function Bardas() {
     return () => clearTimeout(tid);
   }, [map, panelPlegado]);
 
+  // Dónde estás y hacia dónde ves. Con brújula sale una flecha que gira con el
+  // teléfono (caminando en una colonia desconocida, "hacia dónde voy" importa
+  // más que "dónde estoy"); sin brújula, el punto de siempre.
   useEffect(() => {
     if (!map || !miPos) return;
     if (capaYo.current) capaYo.current.remove();
     const g = L.layerGroup().addTo(map);
-    L.circleMarker(miPos, {
-      radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1
-    }).bindTooltip('Aquí estás tú').addTo(g);
+    if (rumbo == null) {
+      L.circleMarker(miPos, {
+        radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1
+      }).bindTooltip('Aquí estás tú').addTo(g);
+    } else {
+      L.marker(miPos, {
+        zIndexOffset: 1000,
+        icon: L.divIcon({
+          className: 'flecha-yo',
+          html:
+            `<div style="transform:rotate(${rumbo}deg)">` +
+            '<svg viewBox="0 0 36 36" width="36" height="36">' +
+            '<circle cx="18" cy="18" r="11" fill="#1d6fd1" fill-opacity="0.22"/>' +
+            '<path d="M18 4 L26 25 L18 20 L10 25 Z" fill="#1d6fd1" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>' +
+            '</svg></div>',
+          iconSize: [36, 36],
+          iconAnchor: [18, 18]
+        })
+      })
+        .bindTooltip('Aquí estás tú · la punta es hacia donde ves')
+        .addTo(g);
+    }
     capaYo.current = g;
-  }, [map, miPos]);
+  }, [map, miPos, rumbo]);
 
   // Encuadra al armarse la ruta (una vez por ruta nueva).
   const encuadrado = useRef(0);
@@ -586,9 +686,12 @@ export default function Bardas() {
             nombre: previo.nombre || '',
             telefono: previo.telefono || '',
             aCambio: previo.a_cambio || '',
-            notas: previo.notas || ''
+            notas: previo.notas || '',
+            // Se respeta el equipo que ya traía: si lo hizo otro, no hay por
+            // qué reescribirlo con el de quien está mirando la barda ahora.
+            equipo: previo.equipo || equipo
           }
-        : { estado: null, nombre: '', telefono: '', aCambio: '', notas: '' }
+        : { estado: null, nombre: '', telefono: '', aCambio: '', notas: '', equipo }
     );
   }
 
@@ -602,7 +705,7 @@ export default function Bardas() {
       telefono: form.telefono.trim() || null,
       a_cambio: form.aCambio.trim() || null,
       notas: form.notas.trim() || null,
-      equipo: equipo.trim() || null,
+      equipo: form.equipo.trim() || null,
       lat: miPos ? miPos[0] : null,
       lng: miPos ? miPos[1] : null
     };
@@ -644,8 +747,7 @@ export default function Bardas() {
     setExportando(true);
     setError('');
     try {
-      const { descargarCorteBardas } = await import('../lib/corteBardas.js');
-      await descargarCorteBardas(todas, permisos);
+      await descargarCorteBardas(todas, permisos, filtroCorte);
     } catch (e) {
       setError('No se pudo armar el Excel del corte. (' + e.message + ')');
     }
@@ -875,6 +977,23 @@ export default function Bardas() {
                   onChange={(e) => setFormNueva((f) => ({ ...f, colonia: e.target.value }))}
                 />
 
+                <label className="etiqueta">Distrito (opcional)</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  inputMode="numeric"
+                  value={formNueva.distrito}
+                  onChange={(e) => setFormNueva((f) => ({ ...f, distrito: e.target.value }))}
+                />
+
+                {(autollenando || comoSeDedujo) && (
+                  <p className="nota" style={{ marginTop: 4 }}>
+                    {autollenando
+                      ? '🔎 Buscando la dirección de donde estás…'
+                      : `✨ ${comoSeDedujo} Corrígelo si algo no cuadra; el número de la casa hay que escribirlo a mano.`}
+                  </p>
+                )}
+
                 <label className="etiqueta">Foto (opcional)</label>
                 <input
                   type="file"
@@ -997,8 +1116,22 @@ export default function Bardas() {
           <>
             <h3>Corte</h3>
             <p className="nota" style={{ marginTop: 0 }}>
-              Baja un Excel con todas las bardas, en qué quedó cada una y qué equipo
-              la hizo.
+              Baja un Excel con en qué quedó cada barda y qué equipo la hizo.
+            </p>
+            <label className="etiqueta">¿Qué bardas incluir?</label>
+            <div className="fila" style={{ flexWrap: 'wrap' }}>
+              {FILTROS_CORTE.map((f) => (
+                <button
+                  key={f.id}
+                  className={filtroCorte === f.id ? 'boton primario mini' : 'boton suave mini'}
+                  onClick={() => setFiltroCorte(f.id)}
+                >
+                  {f.etiqueta}
+                </button>
+              ))}
+            </div>
+            <p className="nota" style={{ marginTop: 4 }}>
+              {FILTROS_CORTE.find((f) => f.id === filtroCorte)?.descripcion}
             </p>
             <div className="fila">
               <button className="boton suave mini" onClick={exportarCorte} disabled={exportando}>
@@ -1068,6 +1201,18 @@ export default function Bardas() {
                 a esta barda todavía no se le ha preguntado a nadie.
               </p>
             )}
+
+            {/* Editable a propósito: sirve para capturar bardas que otro
+                equipo hizo a mano (se les cerró la app, o la hicieron sin
+                ella) sin quedar registradas a nombre de quien las teclea. */}
+            <label className="etiqueta">Equipo que la hizo</label>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Nombre del equipo"
+              value={form.equipo}
+              onChange={(e) => setForm((f) => ({ ...f, equipo: e.target.value }))}
+            />
 
             <label className="etiqueta">Nombre de quien atendió</label>
             <input

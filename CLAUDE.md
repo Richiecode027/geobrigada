@@ -113,11 +113,32 @@ para brigadistas, registro de material repartido.
   que solo sale de la ruta del día y vuelve a pendientes al siguiente — a esa
   barda nunca se le preguntó a nadie (ver bardaAtendida en src/lib/bardas.js).
 - Corte para la oficina: botón "Exportar corte a Excel" en la vista Bardas
-  (src/lib/corteBardas.js). Respeta columna por columna el reporte que ya se
-  usa (NO./BRIGADA/DIRECCION/COLONIA/DISTRITO//REFERENCIAS/CON PERMISO/SIN
-  PERMISO/COMPROMISO) y agrega al final EQUIPO, ESTADO, ATENDIÓ, TELÉFONO,
-  NOTAS y REGISTRADO. `xlsx` es dependencia de runtime pero se carga con
-  import diferido: solo pesa al tocar el botón, no en la app del brigadista.
+  (src/lib/corteBardas.js), con filtro Todas / Solo visitadas / Solo con
+  permiso. Sigue el reporte que ya se usa (NO./BRIGADA/DIRECCION/COLONIA/
+  DISTRITO//REFERENCIAS/COMPROMISO) pero con UNA sola columna ESTADO en vez
+  de las casillas CON PERMISO y SIN PERMISO (no alcanzaban para los cuatro
+  resultados), más EQUIPO, ATENDIÓ, TELÉFONO, NOTAS y REGISTRADO. `xlsx` es
+  dependencia de runtime pero queda en su propio chunk: solo se descarga al
+  tocar el botón, nunca en la app del brigadista.
+- Al agregar una barda nueva, src/lib/ubicacion.js llena solos colonia,
+  distrito y calle desde la ubicación. La COLONIA sale del catálogo INEGI que
+  ya trae la app (local, sin internet); la CALLE de Nominatim (el número casi
+  nunca está en OSM para Morelia, ese se teclea); el DISTRITO se deduce —la
+  app no tiene los polígonos de distritos electorales— del propio catálogo de
+  bardas: primero por nombre de colonia y si no, por la barda conocida más
+  cercana (máx. 2.5 km, si no se deja vacío). Probado dejando fuera cada barda
+  y adivinando su distrito con las otras 164: 164 aciertos, 0 errores, 1 vacía.
+  Los campos quedan editables porque es una aproximación.
+- La ubicación propia se ve SIEMPRE, no solo en recorrido: fuera de ruta el
+  GPS corre en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
+  notificación permanente ni la entrega nativa del APK, que ahí sería
+  abusiva). El puntito es una flecha que gira con la brújula
+  (src/lib/brujula.js: webkitCompassHeading en iOS, deviceorientationabsolute
+  en Android, descontando el giro de pantalla); si el aparato no tiene
+  brújula, se dibuja el punto de antes.
+- El equipo se puede editar AL registrar cada barda, no solo en la pantalla de
+  inicio: sirve para capturar las que otro equipo hizo a mano. Al reabrir una
+  barda ya registrada se respeta el equipo original en vez de reasignarla.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

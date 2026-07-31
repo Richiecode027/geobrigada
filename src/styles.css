@@ -228,6 +228,14 @@ textarea { resize: vertical; }
   font-size: 0.8rem;
 }
 
+/* Flecha de "aquí estás tú": gira con la brújula del teléfono. La transición
+   suaviza el giro para que no salte de golpe entre lectura y lectura. */
+.flecha-yo { background: none; border: none; }
+.flecha-yo div {
+  width: 36px; height: 36px;
+  transition: transform 0.15s linear;
+}
+
 .flecha-ruta { background: none; border: none; }
 .flecha-ruta div {
   font-size: 13px;

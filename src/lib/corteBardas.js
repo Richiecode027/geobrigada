@@ -39,11 +39,9 @@ const ENCABEZADOS = [
   'DISTRITO',
   '',
   'REFERENCIAS',
-  'CON PERMISO',
-  'SIN PERMISO',
+  'ESTADO',
   'COMPROMISO ',
   'EQUIPO',
-  'ESTADO',
   'ATENDIÓ',
   'TELÉFONO',
   'NOTAS',
@@ -51,21 +49,36 @@ const ENCABEZADOS = [
 ];
 
 // Ancho de cada columna, en caracteres (si no, sale todo apretado y hay que
-// arrastrar 16 columnas a mano antes de poder leer el corte).
-const ANCHOS = [6, 8, 34, 22, 9, 3, 40, 12, 12, 22, 14, 24, 20, 14, 30, 18];
+// arrastrar 14 columnas a mano antes de poder leer el corte).
+const ANCHOS = [6, 8, 34, 22, 9, 3, 40, 24, 22, 14, 20, 14, 30, 18];
+
+// Qué bardas entran en el corte.
+export const FILTROS = [
+  { id: 'todo', etiqueta: 'Todas', descripcion: 'Las del listado, hayan sido visitadas o no.' },
+  { id: 'visitadas', etiqueta: 'Solo visitadas', descripcion: 'Únicamente las que ya tienen un resultado registrado.' },
+  { id: 'con_permiso', etiqueta: 'Solo con permiso', descripcion: 'Únicamente las que sí dejaron pintar.' }
+];
+
+function pasaElFiltro(estado, filtro) {
+  if (filtro === 'visitadas') return Boolean(estado);
+  if (filtro === 'con_permiso') return estado === 'con_permiso';
+  return true;
+}
 
 // bardas   = catálogo completo (public/bardas.json + las agregadas en la app)
 // permisos = filas de bardas_permisos tal como vienen de la nube
-export function filasDeCorte(bardas, permisos) {
+export function filasDeCorte(bardas, permisos, filtro = 'todo') {
   const porId = new Map();
   for (const p of permisos || []) {
     if (!p.anulado) porId.set(String(p.barda_id), p);
   }
 
-  return bardas.map((b) => {
+  const filas = [];
+  for (const b of bardas) {
     const p = porId.get(String(b.id));
     const estado = estadoDe(p);
-    return [
+    if (!pasaElFiltro(estado, filtro)) continue;
+    filas.push([
       b.id,
       b.brigada || '',
       b.direccion || '',
@@ -73,22 +86,21 @@ export function filasDeCorte(bardas, permisos) {
       b.distrito || '',
       '',
       b.referencia || '',
-      estado === 'con_permiso',
-      estado === 'sin_permiso',
+      estado ? ETIQUETA_ESTADO[estado] || estado : 'Pendiente',
       p?.a_cambio || '',
       p?.equipo || '',
-      estado ? ETIQUETA_ESTADO[estado] || estado : 'Pendiente',
       p?.nombre || '',
       p?.telefono || '',
       p?.notas || '',
       fechaBonita(p?.actualizado)
-    ];
-  });
+    ]);
+  }
+  return filas;
 }
 
-export async function descargarCorteBardas(bardas, permisos) {
+export async function descargarCorteBardas(bardas, permisos, filtro = 'todo') {
   const XLSX = await import('xlsx');
-  const hoja = XLSX.utils.aoa_to_sheet([ENCABEZADOS, ...filasDeCorte(bardas, permisos)]);
+  const hoja = XLSX.utils.aoa_to_sheet([ENCABEZADOS, ...filasDeCorte(bardas, permisos, filtro)]);
   hoja['!cols'] = ANCHOS.map((wch) => ({ wch }));
   hoja['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: ENCABEZADOS.length - 1 } }) };
   hoja['!freeze'] = { xSplit: 0, ySplit: 1 };

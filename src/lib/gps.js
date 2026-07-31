@@ -38,7 +38,12 @@ async function pedirPermisoNotificaciones() {
 // claveRuta identifica la ruta (se usa para el rastro nativo; se ignora en
 // el navegador). alPunto recibe { lat, lng, precision } (precision en
 // metros); alError recibe un mensaje listo para mostrarse.
-export function iniciarGPS(claveRuta, alPunto, alError) {
+//
+// segundoPlano = false es el "modo ligero": solo mientras la app está a la
+// vista, sin notificación permanente ni entrega nativa. Se usa para enseñar
+// dónde está parado el brigadista aunque no traiga recorrido — ahí sería
+// abusivo dejarle prendido el aviso de "GeoBrigada sigue tu recorrido".
+export function iniciarGPS(claveRuta, alPunto, alError, { segundoPlano = true } = {}) {
   if (!esApk) {
     if (!('geolocation' in navigator)) {
       alError('Este navegador no tiene GPS disponible.');
@@ -65,18 +70,28 @@ export function iniciarGPS(claveRuta, alPunto, alError) {
   // --- APK: plugin de segundo plano ---------------------------------------
   let detenido = false;
 
-  pedirPermisoNotificaciones().finally(() => {
+  // Sin backgroundMessage el plugin NO se queda corriendo con la app cerrada:
+  // eso es justo lo que se quiere en el modo ligero.
+  const ajustes = segundoPlano
+    ? {
+        backgroundTitle: 'GeoBrigada sigue tu recorrido',
+        backgroundMessage: 'Registrando tu ruta aunque cierres la app.',
+        // entrega nativa: sigue mandando puntos aunque maten el proceso
+        url: URL_RELAY + '?ruta=' + encodeURIComponent(claveRuta)
+      }
+    : {};
+
+  const preparar = segundoPlano ? pedirPermisoNotificaciones() : Promise.resolve();
+
+  preparar.finally(() => {
     if (detenido) return;
     BackgroundGeolocation.start(
       {
-        backgroundTitle: 'GeoBrigada sigue tu recorrido',
-        backgroundMessage: 'Registrando tu ruta aunque cierres la app.',
+        ...ajustes,
         requestPermissions: true,
         stale: false,
         // mínimo de metros entre puntos; el track ya filtra a ~15 m aparte
-        distanceFilter: 3,
-        // entrega nativa: sigue mandando puntos aunque maten el proceso
-        url: URL_RELAY + '?ruta=' + encodeURIComponent(claveRuta)
+        distanceFilter: 3
       },
       (pos, error) => {
         if (error) {
