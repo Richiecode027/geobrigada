@@ -54,7 +54,9 @@ const ESTADOS = [
   { id: 'con_permiso', etiqueta: '✅ Sí dio permiso', corto: 'Con permiso', color: '#2a9d3a', pin: '✓', boton: 'exito' },
   { id: 'sin_permiso', etiqueta: '❌ No dio permiso', corto: 'Sin permiso', color: '#c1121f', pin: '✕', boton: 'peligro' },
   { id: 'visitado', etiqueta: '🚪 No había nadie', corto: 'Visitado', color: '#7b61c9', pin: '?', boton: 'suave' },
-  { id: 'no_habitado', etiqueta: '🏚 Casa sola / abandonada', corto: 'No habitado', color: '#6b7280', pin: '—', boton: 'suave' }
+  // Amarillo, no gris: en gris se confundía con las que faltan por visitar,
+  // que es justo lo contrario (a esta ya nadie tiene que volver).
+  { id: 'no_habitado', etiqueta: '🏚 Casa sola / abandonada', corto: 'No habitado', color: '#ffd21e', colorTexto: '#4a3b00', pin: '🏚', boton: 'suave' }
 ];
 const ESTADO_POR_ID = new Map(ESTADOS.map((e) => [e.id, e]));
 
@@ -117,11 +119,14 @@ const normalizar = (s) =>
 
 // Pin numerado: verde = con permiso, rojo = sin permiso, azul = en la ruta de
 // hoy (con su número de orden), gris = pendiente pero fuera de la ruta.
-function pinBarda(latlng, texto, color) {
+function pinBarda(latlng, texto, color, colorTexto) {
+  // Sobre fondos claros (el amarillo de "casa sola") el blanco de siempre no
+  // se lee: por eso cada estado puede pedir su propio color de letra.
+  const letra = colorTexto ? `;color:${colorTexto}` : '';
   return L.marker(latlng, {
     icon: L.divIcon({
       className: 'pin-barda',
-      html: `<div style="background:${color}">${texto}</div>`,
+      html: `<div style="background:${color}${letra}">${texto}</div>`,
       iconSize: [26, 26],
       iconAnchor: [13, 13]
     })
@@ -587,9 +592,11 @@ export default function Bardas() {
       const info = visita ? infoEstado(visita) : null;
       let color = '#9aa5b1';
       let texto = '';
+      let colorTexto = null;
       if (info) {
         color = info.color;
         texto = info.pin;
+        colorTexto = info.colorTexto || null;
       } else if (orden) {
         color = '#1d6fd1';
         texto = String(orden);
@@ -597,7 +604,7 @@ export default function Bardas() {
         color = '#e8a33d';
         texto = '🔒';
       }
-      pinBarda([b.lat, b.lng], texto, color)
+      pinBarda([b.lat, b.lng], texto, color, colorTexto)
         .bindTooltip(
           `<strong>${b.direccion || 'Barda ' + b.id}</strong><br>${b.colonia || ''}` +
             (info
