@@ -128,7 +128,12 @@ para brigadistas, registro de material repartido.
   bardas: primero por nombre de colonia y si no, por la barda conocida más
   cercana (máx. 2.5 km, si no se deja vacío). Probado dejando fuera cada barda
   y adivinando su distrito con las otras 164: 164 aciertos, 0 errores, 1 vacía.
-  Los campos quedan editables porque es una aproximación.
+  Dirección y colonia quedan editables porque son aproximación; el distrito NO
+  se pregunta (ubicación + calle + colonia ya identifican la barda, y un campo
+  más estorba en la calle) pero sí se guarda, porque el corte lo lleva como
+  columna. El número de casa no se pide: OSM casi no lo tiene en Morelia.
+- Tocar una barda (pin del mapa o lista) despliega el panel si estaba plegado
+  y baja solo hasta su ficha: antes había que abrirlo y buscarla a mano.
 - La ubicación propia se ve SIEMPRE, no solo en recorrido: fuera de ruta el
   GPS corre en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
   notificación permanente ni la entrega nativa del APK, que ahí sería

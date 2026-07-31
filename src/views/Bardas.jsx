@@ -509,6 +509,9 @@ export default function Bardas() {
     setTodas((t) => [...t, aBardaCatalogo(fila)]);
     if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
     setAgregando(false);
+    // Si el intento anterior había fallado, el aviso viejo tiene que irse:
+    // si no, queda diciendo "no se pudo guardar" sobre una barda ya guardada.
+    setError('');
   }
 
   // --- empezar el recorrido (solo al tocar el botón) -----------------------
@@ -674,6 +677,21 @@ export default function Bardas() {
     });
     encuadrado.current = ruta.length;
   }, [map, ruta, miPos]);
+
+  // Al tocar una barda (en el mapa o en la lista) la ficha queda a la vista
+  // sola: se despliega el panel si estaba plegado y se baja hasta ella. Antes
+  // había que abrir el panel y buscarla a mano cada vez.
+  const fichaRef = useRef(null);
+  useEffect(() => {
+    if (!registrando) return;
+    setPanelPlegado(false);
+    // Un respiro para que el panel termine de desplegarse antes de medir
+    // dónde quedó la ficha.
+    const tid = setTimeout(() => {
+      fichaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => clearTimeout(tid);
+  }, [registrando]);
 
   // --- registrar el resultado de la visita ----------------------------------
   function abrirRegistro(b) {
@@ -977,20 +995,15 @@ export default function Bardas() {
                   onChange={(e) => setFormNueva((f) => ({ ...f, colonia: e.target.value }))}
                 />
 
-                <label className="etiqueta">Distrito (opcional)</label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  inputMode="numeric"
-                  value={formNueva.distrito}
-                  onChange={(e) => setFormNueva((f) => ({ ...f, distrito: e.target.value }))}
-                />
-
+                {/* El distrito NO se pregunta: se deduce de la ubicación y se
+                    guarda solo, porque el corte de la oficina lo lleva como
+                    columna. Con la ubicación, la calle y la colonia ya está
+                    identificada la barda; un campo más solo estorba en la calle. */}
                 {(autollenando || comoSeDedujo) && (
                   <p className="nota" style={{ marginTop: 4 }}>
                     {autollenando
                       ? '🔎 Buscando la dirección de donde estás…'
-                      : `✨ ${comoSeDedujo} Corrígelo si algo no cuadra; el número de la casa hay que escribirlo a mano.`}
+                      : `✨ ${comoSeDedujo} Corrígelo si algo no cuadra.`}
                   </p>
                 )}
 
@@ -1143,7 +1156,11 @@ export default function Bardas() {
 
         {/* ---------- FORMULARIO ---------- */}
         {registrando && (
-          <div className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1', marginTop: 12 }}>
+          <div
+            ref={fichaRef}
+            className="tarjeta-equipo"
+            style={{ borderLeftColor: '#1d6fd1', marginTop: 12 }}
+          >
             <strong>{registrando.direccion || 'Barda ' + registrando.id}</strong>
             <div className="datos">{registrando.colonia}</div>
 
