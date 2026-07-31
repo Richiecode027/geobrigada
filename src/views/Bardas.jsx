@@ -27,7 +27,7 @@ import {
   guardarBardaNueva,
   subirFotoBardaNueva,
   cargarReservasBardas,
-  reservarBardas,
+  apartarBarda,
   liberarReservasBardas
 } from '../lib/nube.js';
 
@@ -108,8 +108,6 @@ function borrarSesion() {
 // las de bardas agregadas desde la app son URLs completas de Supabase Storage.
 const urlFoto = (foto) => (/^https?:/.test(foto) ? foto : import.meta.env.BASE_URL + foto);
 
-const CANTIDAD_SUGERIDA = 10;
-
 function metrosBonito(m) {
   return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
 }
@@ -163,7 +161,6 @@ export default function Bardas() {
   // 'config' = antes de empezar (equipo, cuántas bardas) · 'recorrido' = en camino
   const [fase, setFase] = useState('config');
   const [equipo, setEquipo] = useState(sesionInicial?.equipo || '');
-  const [cantidad, setCantidad] = useState(sesionInicial?.cantidad || String(CANTIDAD_SUGERIDA));
   // Recorrido a medias que se puede retomar (se decide al abrir, no antes).
   const [sesionPrevia, setSesionPrevia] = useState(
     sesionInicial?.fase === 'recorrido' && sesionInicial.ruta?.length ? sesionInicial : null
@@ -237,20 +234,21 @@ export default function Bardas() {
     };
   }, []);
 
-  // Refresco ligero de las reservas: para que si alguien más aparta bardas
-  // mientras este equipo sigue viendo el mapa (decidiendo por dónde empezar),
-  // el color se ponga al día sin que tenga que recargar la app.
-  useEffect(() => {
-    if (!nubeConfigurada()) return;
-    const id = setInterval(async () => {
-      try {
-        setReservas(await cargarReservasBardas());
-      } catch {
-        /* se reintenta en el siguiente ciclo */
-      }
-    }, 30000);
-    return () => clearInterval(id);
-  }, []);
+  // Antes esto se preguntaba cada 30 segundos, y era el 90% de todo lo que la
+  // app le pedía a la nube en una jornada. Como apartar ahora es un acto
+  // deliberado y no vence, basta con leerlo al abrir y volver a leerlo justo
+  // antes de calcular la ruta (que es el único momento en que estorbaría
+  // traer datos viejos).
+  async function refrescarReservas() {
+    if (!nubeConfigurada()) return [];
+    try {
+      const r = await cargarReservasBardas();
+      setReservas(r);
+      return r;
+    } catch {
+      return reservas;
+    }
+  }
 
   // Solo los registros que de verdad cierran la barda: uno "visitado" de ayer
   // ya no cuenta (esa barda volvió a la lista de pendientes hoy).
@@ -265,8 +263,7 @@ export default function Bardas() {
     return cuenta;
   }, [permisosVigentes]);
 
-  // Bardas que otro equipo ya trae en su recorrido (las propias no cuentan:
-  // ese color es "azul con número", ya lo distingue el mapa).
+  // Bardas apartadas por OTRO equipo (las propias van aparte, más abajo).
   const reservasAjenas = useMemo(() => {
     const miEquipo = equipo.trim();
     const m = new Map();
@@ -277,19 +274,33 @@ export default function Bardas() {
     return m;
   }, [reservas, equipo]);
 
+  // Las que MI equipo apartó y todavía no ha registrado: esas son las que la
+  // app va a ordenar cuando pida la ruta.
+  const misApartadas = useMemo(() => {
+    const miEquipo = equipo.trim();
+    if (!miEquipo) return [];
+    const mias = new Set(
+      reservas.filter((r) => (r.equipo || '') === miEquipo).map((r) => String(r.barda_id))
+    );
+    return pendientes.filter((b) => mias.has(String(b.id)));
+  }, [reservas, equipo, pendientes]);
+
+  const apartadaPor = (bardaId) =>
+    reservas.find((r) => String(r.barda_id) === String(bardaId))?.equipo || null;
+
   // Guarda la jornada en el teléfono a cada cambio, para poder retomarla si la
   // app se cierra. Mientras haya una sesión previa esperando respuesta no se
   // toca nada: si no, el arranque en fase 'config' la borraría.
   useEffect(() => {
     if (sesionPrevia) return;
     if (fase === 'recorrido' && ruta.length > 0) {
-      guardarSesion({ equipo, cantidad, fase, ruta, porCalles });
+      guardarSesion({ equipo, fase, ruta, porCalles });
     } else if (equipo.trim()) {
-      // Aunque no traiga ruta, se recuerda QUIÉN es: así, al reabrir, la app
-      // reconoce sus propias reservas en vez de verlas como de otro equipo.
-      guardarSesion({ equipo, cantidad, fase: 'config', ruta: [] });
+      // Aunque no traiga ruta, se recuerda QUIÉN es: de ahí depende que la app
+      // reconozca cuáles bardas apartó él y cuáles son de otro equipo.
+      guardarSesion({ equipo, fase: 'config', ruta: [] });
     }
-  }, [equipo, cantidad, fase, ruta, porCalles, sesionPrevia]);
+  }, [equipo, fase, ruta, porCalles, sesionPrevia]);
 
   // El GPS lo maneja este efecto y nadie más. Fuera de recorrido va en modo
   // ligero (sin notificación permanente) porque ver dónde estás parado y hacia
@@ -317,18 +328,6 @@ export default function Bardas() {
     };
   }, []);
 
-  // Renueva la reserva mientras el equipo sigue caminando: dura poco a
-  // propósito, así el que desaparece la suelta pronto y el que sigue ahí no
-  // la pierde.
-  useEffect(() => {
-    if (fase !== 'recorrido' || ruta.length === 0) return;
-    const id = setInterval(
-      () => reservarBardas(ruta.map((b) => b.id), equipo.trim()),
-      10 * 60000
-    );
-    return () => clearInterval(id);
-  }, [fase, ruta, equipo]);
-
   function arrancarGPS({ segundoPlano = true } = {}) {
     if (detenerGPS.current) detenerGPS.current();
     detenerGPS.current = iniciarGPS(
@@ -345,38 +344,45 @@ export default function Bardas() {
     );
   }
 
-  // Retoma el recorrido tal cual iba: MISMA ruta y mismo orden, sin recalcular
-  // (recalcular le cambiaría el camino a media jornada). Solo se quitan las
-  // bardas que alguien haya registrado mientras la app estuvo cerrada.
+  // Retoma el recorrido tal cual iba: MISMO orden, sin recalcular (recalcular
+  // le cambiaría el camino a media jornada). Solo se quitan las bardas que
+  // alguien haya registrado mientras la app estuvo cerrada. Ya no hay que
+  // volver a apartarlas: siguen apartadas en la nube, que es justo el punto.
   function retomarRecorrido() {
     const guardada = sesionPrevia;
     setSesionPrevia(null);
     const vivas = new Set(pendientes.map((b) => String(b.id)));
-    const rutaViva = guardada.ruta.filter((b) => vivas.has(String(b.id)));
-    setRuta(rutaViva);
+    setRuta(guardada.ruta.filter((b) => vivas.has(String(b.id))));
     setPorCalles(Boolean(guardada.porCalles));
     yaCalculada.current = true;
     setFase('recorrido'); // el efecto del GPS lo pasa solo a modo completo
     setError('');
     setGpsError('');
-    reservarBardas(rutaViva.map((b) => b.id), equipo.trim()); // vuelve a apartarlas
   }
 
-  // No quiere retomar: se sueltan esas bardas en el acto para que otro equipo
-  // las pueda tomar sin esperar a que venza la reserva.
+  // Solo olvida el orden guardado. Las bardas SIGUEN apartadas: el equipo las
+  // eligió a propósito y soltarlas es otra decisión, con su propio botón.
   function descartarSesionPrevia() {
-    if (sesionPrevia?.ruta?.length) {
-      liberarReservasBardas(sesionPrevia.ruta.map((b) => b.id));
-    }
     borrarSesion();
     setSesionPrevia(null);
   }
 
   function terminarRecorrido() {
-    if (ruta.length > 0) liberarReservasBardas(ruta.map((b) => b.id));
     borrarSesion();
     setFase('config'); // el efecto del GPS regresa solo a modo ligero
     setRuta([]);
+  }
+
+  // Suelta de golpe todo lo que trae apartado este equipo.
+  async function soltarTodas() {
+    const ids = misApartadas.map((b) => b.id);
+    if (ids.length === 0) return;
+    if (!window.confirm(`¿Soltar las ${ids.length} bardas que traes apartadas? Quedarán libres para cualquier equipo.`)) return;
+    await liberarReservasBardas(ids);
+    await refrescarReservas();
+    setRuta([]);
+    borrarSesion();
+    setFase('config');
   }
 
   // Botón "atrás" de Android: en vez de cerrar la app, cierra lo que esté
@@ -525,61 +531,40 @@ export default function Bardas() {
     setError('');
   }
 
-  // --- empezar el recorrido (solo al tocar el botón) -----------------------
-  function iniciarRecorrido() {
+  // --- armar la ruta con lo que el equipo ya apartó -------------------------
+  async function iniciarRecorrido() {
     setError('');
     setGpsError('');
+    // Se relee por si alguien soltó o tomó algo desde otro teléfono.
+    await refrescarReservas();
     yaCalculada.current = false;
     setCalculando(true);
     setFase('recorrido'); // el efecto del GPS lo pasa solo a modo completo
   }
 
-  // Bardas pendientes que NINGÚN OTRO equipo trae ya en su ruta: se consulta
-  // justo antes de calcular, para que dos equipos que arrancan casi al mismo
-  // tiempo no acaben con la misma lista.
-  async function pendientesLibres() {
-    if (!nubeConfigurada()) return pendientes;
-    let reservas = [];
-    try {
-      reservas = await cargarReservasBardas();
-    } catch {
-      return pendientes; // si falla la consulta, se sigue sin filtrar
-    }
-    const miEquipo = equipo.trim();
-    const apartadas = new Set(
-      reservas.filter((r) => (r.equipo || '') !== miEquipo).map((r) => String(r.barda_id))
-    );
-    return pendientes.filter((b) => !apartadas.has(String(b.id)));
+  // Ordena las bardas que el equipo YA apartó. No elige ni descarta ninguna:
+  // eso lo decidió el equipo al apartarlas.
+  async function calcularRuta(desde, seleccionadas) {
+    setCalculando(true);
+    const r = await rutaDeBardasPorCalles(desde, seleccionadas);
+    setRuta(r.ruta);
+    setPorCalles(r.porCalles);
+    setCalculando(false);
   }
 
   // Con la primera ubicación se arma la ruta (una sola vez: si se recalculara
   // a cada paso del GPS, el orden cambiaría mientras el equipo camina).
   useEffect(() => {
-    if (fase !== 'recorrido' || !miPos || yaCalculada.current || pendientes.length === 0) return;
+    if (fase !== 'recorrido' || !miPos || yaCalculada.current || misApartadas.length === 0) return;
     yaCalculada.current = true;
-    (async () => {
-      setCalculando(true);
-      const cuantas = Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA);
-      const libres = await pendientesLibres();
-      const r = await rutaDeBardasPorCalles(miPos, libres, cuantas);
-      setRuta(r.ruta);
-      setPorCalles(r.porCalles);
-      setCalculando(false);
-      reservarBardas(r.ruta.map((b) => b.id), equipo.trim());
-    })();
-  }, [fase, miPos, pendientes, cantidad]);
+    calcularRuta(miPos, misApartadas);
+  }, [fase, miPos, misApartadas]);
 
-  // Rehace la ruta con lo que queda pendiente (al registrar o al pedir otras).
+  // Rehace el orden desde donde está parado ahora, con lo que le quede.
   async function recalcular() {
     if (!miPos) return;
-    setCalculando(true);
-    const cuantas = Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA);
-    const libres = await pendientesLibres();
-    const r = await rutaDeBardasPorCalles(miPos, libres, cuantas);
-    setRuta(r.ruta);
-    setPorCalles(r.porCalles);
-    setCalculando(false);
-    reservarBardas(r.ruta.map((b) => b.id), equipo.trim());
+    await refrescarReservas();
+    await calcularRuta(miPos, misApartadas);
   }
 
   // --- mapa ----------------------------------------------------------------
@@ -589,6 +574,7 @@ export default function Bardas() {
     const g = L.layerGroup().addTo(map);
     const porId = new Map(permisosVigentes.map((p) => [String(p.barda_id), p]));
     const enRuta = new Map(ruta.map((b, i) => [String(b.id), i + 1]));
+    const esMia = new Set(misApartadas.map((b) => String(b.id)));
 
     for (const b of todas) {
       if (b.lat == null) continue;
@@ -596,6 +582,7 @@ export default function Bardas() {
       const orden = enRuta.get(String(b.id));
       const apartada = reservasAjenas.get(String(b.id));
       const info = visita ? infoEstado(visita) : null;
+      const miaApartada = !visita && !orden && esMia.has(String(b.id));
       let color = '#9aa5b1';
       let texto = '';
       let colorTexto = null;
@@ -606,6 +593,10 @@ export default function Bardas() {
       } else if (orden) {
         color = '#1d6fd1';
         texto = String(orden);
+      } else if (miaApartada) {
+        // Apartada por mí pero todavía sin orden de ruta.
+        color = '#1d6fd1';
+        texto = '📌';
       } else if (apartada) {
         color = '#e8a33d';
         texto = '🔒';
@@ -615,6 +606,8 @@ export default function Bardas() {
           `<strong>${b.direccion || 'Barda ' + b.id}</strong><br>${b.colonia || ''}` +
             (info
               ? `<br>${info.etiqueta}${visita.equipo ? ` · ${visita.equipo}` : ''}`
+              : miaApartada
+              ? '<br>📌 La tienes apartada'
               : apartada
               ? `<br>🔒 Apartada por ${apartada.equipo || 'otro equipo'}`
               : '')
@@ -638,7 +631,7 @@ export default function Bardas() {
       }
     }
     capaBardas.current = g;
-  }, [map, todas, permisosVigentes, reservasAjenas, ruta, porCalles, miPos]);
+  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles, miPos]);
 
   // Al plegar o desplegar el panel, el mapa cambia de tamaño: hay que avisarle
   // a Leaflet o se queda con el tamaño viejo y los pines salen corridos.
@@ -761,7 +754,8 @@ export default function Bardas() {
   // --- registrar el resultado de la visita ----------------------------------
   function abrirRegistro(b) {
     const previo = permisosVigentes.find((p) => String(p.barda_id) === String(b.id));
-    setRegistrando({ ...b, previo: previo || null });
+    const apartador = apartadaPor(b.id);
+    setRegistrando({ ...b, previo: previo || null, apartadaPor: apartador });
     setForm(
       previo
         ? {
@@ -774,21 +768,56 @@ export default function Bardas() {
             // qué reescribirlo con el de quien está mirando la barda ahora.
             equipo: previo.equipo || equipo
           }
-        : { estado: null, nombre: '', telefono: '', aCambio: '', notas: '', equipo }
+        : {
+            estado: null, nombre: '', telefono: '', aCambio: '', notas: '',
+            // Si ya la apartó alguien se muestra ese nombre (borrarlo la
+            // suelta); si está libre, se propone el equipo de quien la abre,
+            // para que apartarla sea un solo toque.
+            equipo: apartador || equipo
+          }
     );
   }
 
+  // Un solo botón para las dos cosas que se pueden hacer con una barda, según
+  // lo que traiga lleno el formulario:
+  //   · con un resultado marcado -> se registra la visita (y se suelta, porque
+  //     ya se atendió: nadie más tiene por qué esperarla).
+  //   · sin resultado pero con nombre de equipo -> queda APARTADA para ese
+  //     equipo, sin vencimiento.
+  //   · sin resultado y sin nombre -> se suelta y vuelve a estar libre.
   async function guardar() {
-    if (!registrando || !form.estado) return;
+    if (!registrando) return;
+    const id = String(registrando.id);
+    const nombreEquipo = form.equipo.trim();
     setGuardando(true);
+
+    // --- solo apartar o soltar (todavía no se visita) ---
+    if (!form.estado) {
+      const ok = nombreEquipo
+        ? await apartarBarda(id, nombreEquipo)
+        : ((await liberarReservasBardas([id])), true);
+      setGuardando(false);
+      if (!ok) {
+        setError('No se pudo apartar en la nube (¿sin señal?). Intenta de nuevo.');
+        return;
+      }
+      await refrescarReservas();
+      // Si la soltó, sale de la ruta que trae armada.
+      if (!nombreEquipo) setRuta((r) => r.filter((b) => String(b.id) !== id));
+      setRegistrando(null);
+      setError('');
+      return;
+    }
+
+    // --- registrar el resultado de la visita ---
     const fila = {
-      barda_id: String(registrando.id),
+      barda_id: id,
       estado: form.estado,
       nombre: form.nombre.trim() || null,
       telefono: form.telefono.trim() || null,
       a_cambio: form.aCambio.trim() || null,
       notas: form.notas.trim() || null,
-      equipo: form.equipo.trim() || null,
+      equipo: nombreEquipo || null,
       lat: miPos ? miPos[0] : null,
       lng: miPos ? miPos[1] : null
     };
@@ -799,12 +828,12 @@ export default function Bardas() {
       return;
     }
     const guardada = { ...fila, anulado: false, actualizado: new Date().toISOString() };
-    setPermisos((p) => [...p.filter((x) => String(x.barda_id) !== fila.barda_id), guardada]);
+    setPermisos((p) => [...p.filter((x) => String(x.barda_id) !== id), guardada]);
     // Sale de la ruta de hoy; el resto conserva su orden (no se recalcula sola
-    // para no cambiarle el camino al equipo a media jornada). Y como ya se
-    // atendió, se suelta la reserva: nadie más tiene por qué esperarla.
-    setRuta((r) => r.filter((b) => String(b.id) !== fila.barda_id));
-    liberarReservasBardas([fila.barda_id]);
+    // para no cambiarle el camino al equipo a media jornada).
+    setRuta((r) => r.filter((b) => String(b.id) !== id));
+    await liberarReservasBardas([id]);
+    await refrescarReservas();
     setRegistrando(null);
     setError('');
   }
@@ -916,15 +945,15 @@ export default function Bardas() {
               {sesionPrevia.ruta.length} bardas
             </div>
             <p className="nota" style={{ marginTop: 6 }}>
-              Se retoma con las mismas bardas y en el mismo orden que traías. Si
-              empiezas uno nuevo, esas bardas se sueltan para que las tome otro equipo.
+              Se retoma en el mismo orden que traías. Tus bardas siguen apartadas
+              de cualquier forma: eso ya no depende de esta pantalla.
             </p>
             <div className="fila" style={{ marginTop: 8 }}>
               <button className="boton primario" onClick={retomarRecorrido}>
                 ▶ Retomar recorrido
               </button>
               <button className="boton suave" onClick={descartarSesionPrevia}>
-                Empezar uno nuevo
+                Armar el orden de nuevo
               </button>
             </div>
           </div>
@@ -940,28 +969,49 @@ export default function Bardas() {
               onChange={(e) => setEquipo(e.target.value)}
             />
 
-            <label className="etiqueta">Cantidad de bardas por hacer hoy</label>
-            <input
-              type="number"
-              autoComplete="off"
-              min="1"
-              max={Math.max(1, pendientes.length)}
-              value={cantidad}
-              onChange={(e) => setCantidad(e.target.value)}
-            />
-            <p className="nota" style={{ marginTop: 0 }}>
-              Se te arma la ruta con esas bardas, las más cercanas a donde estés.
-            </p>
+            {!equipo.trim() ? (
+              <p className="nota" style={{ marginTop: 6 }}>
+                Escribe el nombre de tu equipo para poder apartar bardas. Es el
+                mismo nombre con el que quedan guardadas.
+              </p>
+            ) : misApartadas.length === 0 ? (
+              <div className="aviso">
+                Todavía no traes bardas apartadas. Toca las que quieras hacer —en
+                el mapa o buscándolas— y guárdalas con el nombre de tu equipo.
+                Quedan apartadas aunque cierres la app.
+              </div>
+            ) : (
+              <>
+                <div className="aviso" style={{ background: '#eef4fc', borderColor: '#c3d8f0' }}>
+                  📌 Traes <strong>{misApartadas.length}</strong>{' '}
+                  {misApartadas.length === 1 ? 'barda apartada' : 'bardas apartadas'}.
+                </div>
+                <ul className="lista-calles">
+                  {misApartadas.map((b) => (
+                    <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
+                      <span>
+                        {b.direccion || 'Barda ' + b.id}
+                        {b.foto ? ' 📷' : ''}
+                        <br />
+                        <span style={{ fontSize: '0.8rem', color: '#666' }}>{b.colonia}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="fila" style={{ marginTop: 10 }}>
+                  <button className="boton primario" onClick={iniciarRecorrido}>
+                    🧭 Calcular mi ruta
+                  </button>
+                  <button className="boton suave mini" onClick={soltarTodas}>
+                    Soltar todas
+                  </button>
+                </div>
+                <p className="nota" style={{ marginTop: 4 }}>
+                  Se ordenan de la forma más corta para caminarlas, desde donde estés.
+                </p>
+              </>
+            )}
 
-            <div className="fila" style={{ marginTop: 10 }}>
-              <button
-                className="boton primario"
-                onClick={iniciarRecorrido}
-                disabled={pendientes.length === 0}
-              >
-                🚀 Iniciar recorrido
-              </button>
-            </div>
             {pendientes.length === 0 && (
               <div className="aviso" style={{ background: '#f0f6ee', borderColor: '#cde3c8' }}>
                 🎉 ¡Ya se preguntó en todas las bardas del listado!
@@ -1026,10 +1076,11 @@ export default function Bardas() {
 
             {!calculando && ruta.length === 0 && miPos && (
               <div className="aviso" style={{ background: '#f0f6ee', borderColor: '#cde3c8' }}>
-                ✅ Terminaste tu ruta.
+                ✅ Terminaste todas las que traías apartadas. Vuelve al inicio y
+                aparta otras para seguir.
                 <div className="fila" style={{ marginTop: 8 }}>
-                  <button className="boton primario mini" onClick={recalcular}>
-                    Pedir otras {Math.max(1, parseInt(cantidad, 10) || CANTIDAD_SUGERIDA)} bardas
+                  <button className="boton primario mini" onClick={terminarRecorrido}>
+                    Apartar más bardas
                   </button>
                 </div>
               </div>
@@ -1170,9 +1221,9 @@ export default function Bardas() {
         {/* ---------- MARCAR UNA BARDA HECHA SIN LA APP ---------- */}
         {!cargando && (
           <>
-            <h3>¿Ya se hizo una barda sin la app?</h3>
+            <h3>Buscar una barda</h3>
             <p className="nota" style={{ marginTop: 0 }}>
-              Búscala por dirección o colonia y márcala, aunque no esté en tu ruta.
+              Para apartarla, registrarla o corregirla, aunque no esté en tu ruta.
             </p>
             <input
               type="text"
@@ -1188,7 +1239,11 @@ export default function Bardas() {
                   {b.foto ? ' 📷' : ''}
                   <div style={{ fontSize: '0.8rem', color: '#666' }}>
                     {b.colonia}
-                    {est ? ` · ${infoEstado(est)?.etiqueta || 'atendida'}` : ' · pendiente'}
+                    {est
+                      ? ` · ${infoEstado(est)?.etiqueta || 'atendida'}`
+                      : apartadaPor(b.id)
+                      ? ` · 📌 apartada por ${apartadaPor(b.id)}`
+                      : ' · libre'}
                     {b.lat == null ? ' · sin ubicación' : ''}
                   </div>
                 </div>
@@ -1249,6 +1304,22 @@ export default function Bardas() {
               </div>
             )}
 
+            {!registrando.previo && registrando.apartadaPor && (
+              <div
+                className="aviso"
+                style={
+                  registrando.apartadaPor === equipo.trim()
+                    ? { background: '#eef4fc', borderColor: '#c3d8f0' }
+                    : { background: '#fff3e0', borderColor: '#f0cf9a' }
+                }
+              >
+                📌 Apartada por <strong>{registrando.apartadaPor}</strong>
+                {registrando.apartadaPor === equipo.trim()
+                  ? ' (tu equipo). Para soltarla, borra el nombre de abajo y guarda.'
+                  : '. Si la tomas tú, cambia el nombre de abajo por el tuyo y guarda.'}
+              </div>
+            )}
+
             {registrando.foto && (
               <img
                 src={urlFoto(registrando.foto)}
@@ -1271,7 +1342,23 @@ export default function Bardas() {
               </button>
             </div>
 
-            <h3>¿Cómo te fue en esta barda?</h3>
+            {/* El nombre del equipo es lo que aparta la barda: con nombre
+                queda apartada, sin nombre queda libre. Va arriba de todo
+                porque en la mayoría de los casos es lo único que se toca. */}
+            <label className="etiqueta">Equipo que la aparta / la hizo</label>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Nombre del equipo (vacío = libre)"
+              value={form.equipo}
+              onChange={(e) => setForm((f) => ({ ...f, equipo: e.target.value }))}
+            />
+
+            <h3>¿Ya la hiciste?</h3>
+            <p className="nota" style={{ marginTop: 0 }}>
+              Si todavía no vas, deja esto sin marcar y guarda: la barda queda
+              apartada para tu equipo hasta que la registres.
+            </p>
             <div className="fila" style={{ flexWrap: 'wrap' }}>
               {ESTADOS.map((e) => (
                 <button
@@ -1294,18 +1381,6 @@ export default function Bardas() {
                 a esta barda todavía no se le ha preguntado a nadie.
               </p>
             )}
-
-            {/* Editable a propósito: sirve para capturar bardas que otro
-                equipo hizo a mano (se les cerró la app, o la hicieron sin
-                ella) sin quedar registradas a nombre de quien las teclea. */}
-            <label className="etiqueta">Equipo que la hizo</label>
-            <input
-              type="text"
-              autoComplete="off"
-              placeholder="Nombre del equipo"
-              value={form.equipo}
-              onChange={(e) => setForm((f) => ({ ...f, equipo: e.target.value }))}
-            />
 
             <label className="etiqueta">Nombre de quien atendió</label>
             <input
@@ -1343,22 +1418,26 @@ export default function Bardas() {
             />
 
             <div className="fila" style={{ marginTop: 10 }}>
-              <button
-                className="boton primario"
-                onClick={guardar}
-                disabled={!form.estado || guardando}
-              >
-                {guardando ? 'Guardando…' : 'Guardar'}
+              <button className="boton primario" onClick={guardar} disabled={guardando}>
+                {guardando
+                  ? 'Guardando…'
+                  : form.estado
+                  ? 'Guardar el resultado'
+                  : form.equipo.trim()
+                  ? '📌 Apartar para ' + form.equipo.trim()
+                  : 'Dejarla libre'}
               </button>
               <button className="boton suave" onClick={() => setRegistrando(null)}>
                 Cancelar
               </button>
             </div>
-            {!form.estado && (
-              <p className="nota" style={{ marginTop: 6 }}>
-                Marca primero cómo te fue.
-              </p>
-            )}
+            <p className="nota" style={{ marginTop: 6 }}>
+              {form.estado
+                ? 'Queda registrada y se suelta: ya nadie tiene que volver.'
+                : form.equipo.trim()
+                ? 'Queda apartada para ese equipo, aunque cierres la app o se acabe la pila. Nadie más la va a tomar.'
+                : 'Sin nombre de equipo, la barda queda libre para cualquiera.'}
+            </p>
             {registrando.previo && (
               <div className="fila" style={{ marginTop: 4 }}>
                 <button

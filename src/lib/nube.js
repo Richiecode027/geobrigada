@@ -286,13 +286,15 @@ export async function cargarBardasNuevas() {
 // Evita que dos equipos calculen la MISMA ruta si arrancan al mismo tiempo:
 // al armar su recorrido, cada equipo aparta esas bardas por unas horas.
 
-// La reserva dura poco A PROPÓSITO y se renueva sola mientras el equipo trae
-// la app abierta (ver renovarReservas en Bardas.jsx). Antes duraba 3 horas
-// fijas, y si a alguien se le cerraba la app sus bardas quedaban bloqueadas
-// toda la tarde — para nadie: ni para él ni para los demás. Con un plazo
-// corto + renovación, el equipo que sigue caminando las conserva y el que
-// desapareció las suelta en menos de una hora.
-const RESERVA_MINUTOS = 45;
+// Apartar es un acto A PROPÓSITO del equipo: escribe su nombre en la barda y
+// guarda. No vence ni necesita que el teléfono ande avisando que sigue vivo —
+// justamente por eso aguanta que se cierre la app, se acabe la pila o se
+// pierda el teléfono. Se suelta borrando el nombre, o sola al registrar la
+// visita.
+//
+// La columna `vence` se queda por compatibilidad con lo que ya había: se
+// escribe muy lejos en el tiempo, que en la práctica es "no vence".
+const SIN_VENCIMIENTO = '2099-12-31T00:00:00.000Z';
 
 export async function cargarReservasBardas() {
   if (!nubeConfigurada()) return [];
@@ -305,17 +307,23 @@ export async function cargarReservasBardas() {
   return res.json();
 }
 
-export async function reservarBardas(ids, equipo) {
-  if (!nubeConfigurada() || ids.length === 0) return;
-  const vence = new Date(Date.now() + RESERVA_MINUTOS * 60000).toISOString();
+// Aparta una barda a nombre de un equipo. Devuelve si se pudo guardar: aquí
+// sí importa saberlo, porque el equipo está esperando ver que quedó apartada.
+export async function apartarBarda(bardaId, equipo) {
+  if (!nubeConfigurada()) return false;
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/bardas_reservadas`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_reservadas`, {
       method: 'POST',
       headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(ids.map((barda_id) => ({ barda_id: String(barda_id), equipo: equipo || null, vence })))
+      body: JSON.stringify({
+        barda_id: String(bardaId),
+        equipo: equipo || null,
+        vence: SIN_VENCIMIENTO
+      })
     });
+    return res.ok;
   } catch {
-    /* si falla, la ruta se calculó igual; en el peor caso otro equipo se topa con las mismas bardas */
+    return false;
   }
 }
 

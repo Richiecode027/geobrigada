@@ -58,43 +58,11 @@ export function bardasPendientes(bardas, permisos) {
   return bardas.filter((b) => b.lat != null && !ya.has(String(b.id)));
 }
 
-// Elige QUÉ bardas hacer hoy: una ZONA COMPACTA, no las que vayan quedando
-// cerca una de otra en cadena.
-//
-// Por qué: el método de "la siguiente más cercana" se mete en un grupo, lo
-// agota y luego tiene que dar un salto enorme al siguiente grupo — en Morelia
-// eso significaba cruzar la ciudad a media jornada. Aquí se prueban varias
-// zonas de arranque (las bardas más cercanas al equipo) y se elige la que deje
-// el recorrido total más corto: así se trabaja una zona y se camina poco entre
-// barda y barda. Determinista.
-// Cuántas zonas distintas se prueban antes de decidir (más = mejor ruta pero
-// más cálculo; con 15 basta y es instantáneo).
-const SEMILLAS = 15;
-
-export function zonaDeTrabajo(origen, pendientes, cuantas) {
-  if (pendientes.length === 0) return [];
-  if (pendientes.length <= cuantas) return pendientes.slice();
-
-  const dist = (a, b) => haversine([a.lat ?? a[0], a.lng ?? a[1]], [b.lat, b.lng]);
-  const cercanasAlEquipo = pendientes
-    .map((b) => ({ b, d: haversine(origen, [b.lat, b.lng]) }))
-    .sort((x, y) => x.d - y.d || (x.b.id < y.b.id ? -1 : 1))
-    .slice(0, SEMILLAS)
-    .map((x) => x.b);
-
-  let mejor = null;
-  for (const semilla of cercanasAlEquipo) {
-    // Las `cuantas` bardas más pegadas a esa semilla forman la zona candidata.
-    const zona = pendientes
-      .map((b) => ({ b, d: dist(semilla, b) }))
-      .sort((x, y) => x.d - y.d || (x.b.id < y.b.id ? -1 : 1))
-      .slice(0, cuantas)
-      .map((x) => x.b);
-    const costo = largoDeRuta(ordenarPorCercania(origen, zona));
-    if (mejor === null || costo < mejor.costo) mejor = { zona, costo };
-  }
-  return mejor.zona;
-}
+// QUÉ bardas se hacen hoy ya no lo decide la app: las elige el equipo,
+// apartándolas una por una con su nombre (ver apartarBarda en nube.js). Antes
+// se escogía sola una "zona compacta" cercana, pero eso ataba el apartado al
+// arranque del recorrido: si se cerraba la app, el equipo perdía su selección.
+// Aquí solo se ORDENA lo que el equipo ya eligió.
 
 // Ordena un conjunto ya elegido: desde `origen`, siempre la más cercana.
 // Determinista (los empates se rompen por id).
@@ -118,12 +86,6 @@ export function ordenarPorCercania(origen, bardas) {
   return orden;
 }
 
-// Ruta de la jornada en línea recta: elige la zona compacta y la ordena.
-// (El trazo por calles reales lo hace rutaDeBardasPorCalles, más abajo.)
-export function rutaDeBardas(origen, pendientes, limite = 15) {
-  return ordenarPorCercania(origen, zonaDeTrabajo(origen, pendientes, limite));
-}
-
 // Metros totales del recorrido propuesto (sin contar el regreso).
 export function largoDeRuta(ruta) {
   return ruta.reduce((s, b) => s + (b.metrosDesdeAnterior || 0), 0);
@@ -139,11 +101,12 @@ export function largoDeRuta(ruta) {
 // Devuelve { ruta, porCalles }. Si no se pudieron bajar las calles (sin señal,
 // Overpass caído), regresa la ruta en línea recta con porCalles = false: la
 // jornada no se detiene por eso.
-export async function rutaDeBardasPorCalles(origen, pendientes, limite = 15) {
-  // Primero se decide la ZONA de hoy en línea recta (rápido) — así el área de
-  // calles a descargar es la mínima necesaria y las bardas quedan juntas.
-  // Después el ruteo real solo reordena y traza dentro de esa zona.
-  const candidatas = rutaDeBardas(origen, pendientes, limite);
+// `seleccionadas` son las bardas que el equipo ya apartó: aquí no se descarta
+// ninguna, solo se pone en el mejor orden para caminarlas.
+export async function rutaDeBardasPorCalles(origen, seleccionadas) {
+  // Primero un orden en línea recta (instantáneo): sirve de respaldo si no se
+  // pueden bajar las calles, y acota el área que hay que descargar.
+  const candidatas = ordenarPorCercania(origen, seleccionadas);
   if (candidatas.length === 0) return { ruta: [], porCalles: false };
 
   let red = null;

@@ -90,22 +90,28 @@ para brigadistas, registro de material repartido.
   dominio ajeno (CORS) — para eso existe
   netlify/functions/resolver-link-maps.js (mismo truco que build-bardas.mjs,
   pero en vivo); esa función SOLO corre en Netlify, no en `npm run dev`.
-  Reservas (jul 2026): si dos equipos arrancan su recorrido casi al mismo
-  tiempo y cerca uno del otro, el algoritmo determinista les daría LA MISMA
-  ruta. Por eso, justo antes de calcular, se consulta `bardas_reservadas`
-  (tabla nueva) y se excluyen las bardas que otro equipo ya trae en su ruta;
-  al terminar de calcular, el equipo aparta las suyas. Si la consulta falla,
-  se sigue sin filtrar (mejor una posible repetida que trabar la ruta).
-  La reserva dura POCO (45 min) y se renueva sola cada 10 min mientras el
-  equipo trae la app abierta: con las 3 horas fijas del primer intento, a
-  quien se le cerraba la app dejaba sus bardas bloqueadas toda la tarde para
-  todos, incluido él. Además la jornada se guarda en el teléfono
-  (localStorage `geobrigada_bardas_sesion`: equipo, cantidad, fase y ruta), y
-  al reabrir se ofrece "Retomar recorrido" con LA MISMA ruta y orden — sin
-  recalcular, solo quitando lo que ya se registró. Guardar una barda,
-  "Terminar recorrido" o "Empezar uno nuevo" sueltan la reserva en el acto.
-  Ojo: el nombre del equipo se guarda siempre, porque de ahí depende que la
-  app reconozca sus PROPIAS reservas en vez de verlas como de otro.
+  APARTAR (jul 2026, rediseñado): el equipo elige A MANO qué bardas va a
+  hacer. En la ficha de cada barda, el campo "Equipo que la aparta / la hizo"
+  ES el apartado: con nombre queda apartada en `bardas_reservadas`, sin
+  nombre queda libre. NO vence ni necesita latido — por eso aguanta que se
+  cierre la app, se acabe la pila o se pierda el teléfono (la columna `vence`
+  se conserva por compatibilidad y se escribe en 2099). Se suelta al borrar
+  el nombre, con "Soltar todas", o sola al registrar la visita.
+  La RUTA se calcula después, con "🧭 Calcular mi ruta": toma lo que el
+  equipo ya apartó y solo lo ORDENA (rutaDeBardasPorCalles ya no elige ni
+  descarta nada). Antes la app escogía sola una "zona compacta" de N bardas
+  al arrancar el recorrido y las apartaba con vencimiento de 45 min +
+  renovación cada 10 min, y consultaba las reservas cada 30 s: eso era el
+  ~90% de todo el tráfico a Supabase en una jornada (~6.7 MB por teléfono al
+  día contra ~70 KB ahora), y ataba el apartado a que la sesión siguiera
+  viva. Las reservas se leen al abrir, al calcular ruta y al guardar; nada de
+  temporizadores (el único setInterval que queda es el de EnVivo.jsx).
+  La jornada se sigue guardando en el teléfono (localStorage
+  `geobrigada_bardas_sesion`: equipo, fase y ruta) pero ya solo para
+  conservar el ORDEN: "Retomar recorrido" no vuelve a apartar nada porque las bardas
+  nunca se soltaron. Ojo: el nombre del equipo se guarda siempre, porque de
+  ahí depende que la app distinga sus bardas (pin azul 📌) de las de otro
+  equipo (pin naranja 🔒).
 - Cada visita guarda un ESTADO en `bardas_permisos.estado` (la columna vieja
   `permiso` se sigue llenando para el Excel y los scripts): `con_permiso`,
   `sin_permiso`, `visitado` (fue pero no había nadie) y `no_habitado` (casa
