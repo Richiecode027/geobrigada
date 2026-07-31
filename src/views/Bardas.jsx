@@ -373,6 +373,20 @@ export default function Bardas() {
     setRuta([]);
   }
 
+  // Soltar la barda que se está viendo, de un toque. Se puede hacer también
+  // borrando el nombre del equipo y guardando, pero eso obliga a pelearse con
+  // el teclado en plena calle.
+  async function soltarEsta() {
+    if (!registrando) return;
+    setGuardando(true);
+    await liberarReservasBardas([String(registrando.id)]);
+    await refrescarReservas();
+    setGuardando(false);
+    setRuta((r) => r.filter((b) => String(b.id) !== String(registrando.id)));
+    setRegistrando(null);
+    setError('');
+  }
+
   // Suelta de golpe todo lo que trae apartado este equipo.
   async function soltarTodas() {
     const ids = misApartadas.map((b) => b.id);
@@ -1315,8 +1329,13 @@ export default function Bardas() {
               >
                 📌 Apartada por <strong>{registrando.apartadaPor}</strong>
                 {registrando.apartadaPor === equipo.trim()
-                  ? ' (tu equipo). Para soltarla, borra el nombre de abajo y guarda.'
+                  ? ' (tu equipo).'
                   : '. Si la tomas tú, cambia el nombre de abajo por el tuyo y guarda.'}
+                <div className="fila" style={{ marginTop: 8 }}>
+                  <button className="boton suave mini" onClick={soltarEsta} disabled={guardando}>
+                    🔓 Quitar el apartado
+                  </button>
+                </div>
               </div>
             )}
 
