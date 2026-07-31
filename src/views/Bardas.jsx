@@ -8,6 +8,7 @@ import { coordsDeLinkMaps } from '../lib/mapsLink.js';
 import {
   cargarBardas,
   bardasPendientes,
+  bardaAtendida,
   rutaDeBardasPorCalles,
   largoDeRuta
 } from '../lib/bardas.js';
@@ -20,7 +21,8 @@ import {
   guardarBardaNueva,
   subirFotoBardaNueva,
   cargarReservasBardas,
-  reservarBardas
+  reservarBardas,
+  liberarReservasBardas
 } from '../lib/nube.js';
 
 // Una fila de bardas_nuevas (la sube el equipo desde la app) al mismo formato
@@ -41,6 +43,58 @@ function aBardaCatalogo(n) {
 
 const idNuevo = () =>
   'n-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+
+// Los cuatro resultados posibles de una visita. El orden es el de los botones.
+const ESTADOS = [
+  { id: 'con_permiso', etiqueta: '✅ Sí dio permiso', corto: 'Con permiso', color: '#2a9d3a', pin: '✓', boton: 'exito' },
+  { id: 'sin_permiso', etiqueta: '❌ No dio permiso', corto: 'Sin permiso', color: '#c1121f', pin: '✕', boton: 'peligro' },
+  { id: 'visitado', etiqueta: '🚪 No había nadie', corto: 'Visitado', color: '#7b61c9', pin: '?', boton: 'suave' },
+  { id: 'no_habitado', etiqueta: '🏚 Casa sola / abandonada', corto: 'No habitado', color: '#6b7280', pin: '—', boton: 'suave' }
+];
+const ESTADO_POR_ID = new Map(ESTADOS.map((e) => [e.id, e]));
+
+// Los registros de antes de que existiera `estado` solo traen el booleano.
+const estadoDeRegistro = (p) =>
+  p?.estado || (p?.permiso === true ? 'con_permiso' : p?.permiso === false ? 'sin_permiso' : null);
+
+const infoEstado = (p) => ESTADO_POR_ID.get(estadoDeRegistro(p)) || null;
+
+// --- la jornada se guarda en el teléfono -------------------------------------
+// A varios equipos se les cerró la app a medio recorrido (Android mata la
+// pestaña, se acaba la batería, le pican al botón equivocado) y al volver a
+// entrar habían perdido su ruta Y sus bardas seguían apartadas a su nombre:
+// no las podía tomar nadie, ni ellos. Guardando aquí quién es el equipo y qué
+// ruta traía, al reabrir se puede retomar exactamente la misma.
+const CLAVE_SESION = 'geobrigada_bardas_sesion';
+const HORAS_SESION = 12;
+
+function leerSesion() {
+  try {
+    const s = JSON.parse(localStorage.getItem(CLAVE_SESION));
+    if (!s || !s.guardado) return null;
+    // Una sesión de ayer ya no sirve para retomar (pero el nombre del equipo sí).
+    if (Date.now() - s.guardado > HORAS_SESION * 3600000) return { equipo: s.equipo };
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function guardarSesion(s) {
+  try {
+    localStorage.setItem(CLAVE_SESION, JSON.stringify({ ...s, guardado: Date.now() }));
+  } catch {
+    /* sin espacio: solo se pierde poder retomar, la jornada sigue */
+  }
+}
+
+function borrarSesion() {
+  try {
+    localStorage.removeItem(CLAVE_SESION);
+  } catch {
+    /* nada que hacer */
+  }
+}
 
 // Las fotos del catálogo (Excel) son rutas locales ("bardas-fotos/1.jpg");
 // las de bardas agregadas desde la app son URLs completas de Supabase Storage.
@@ -85,10 +139,17 @@ export default function Bardas() {
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
 
+  // Lo que quedó guardado la última vez que se usó la app en este teléfono.
+  const [sesionInicial] = useState(leerSesion);
+
   // 'config' = antes de empezar (equipo, cuántas bardas) · 'recorrido' = en camino
   const [fase, setFase] = useState('config');
-  const [equipo, setEquipo] = useState('');
-  const [cantidad, setCantidad] = useState(String(CANTIDAD_SUGERIDA));
+  const [equipo, setEquipo] = useState(sesionInicial?.equipo || '');
+  const [cantidad, setCantidad] = useState(sesionInicial?.cantidad || String(CANTIDAD_SUGERIDA));
+  // Recorrido a medias que se puede retomar (se decide al abrir, no antes).
+  const [sesionPrevia, setSesionPrevia] = useState(
+    sesionInicial?.fase === 'recorrido' && sesionInicial.ruta?.length ? sesionInicial : null
+  );
   const [ruta, setRuta] = useState([]);
   const [porCalles, setPorCalles] = useState(false);
   const [calculando, setCalculando] = useState(false);
@@ -100,8 +161,9 @@ export default function Bardas() {
   const [panelPlegado, setPanelPlegado] = useState(false);
 
   const [registrando, setRegistrando] = useState(null);
-  const [form, setForm] = useState({ permiso: null, nombre: '', telefono: '', aCambio: '', notas: '' });
+  const [form, setForm] = useState({ estado: null, nombre: '', telefono: '', aCambio: '', notas: '' });
   const [guardando, setGuardando] = useState(false);
+  const [exportando, setExportando] = useState(false);
 
   // Agregar una barda que no está en el catálogo (la encontró el equipo en la calle).
   const [agregando, setAgregando] = useState(false);
@@ -165,10 +227,18 @@ export default function Bardas() {
     return () => clearInterval(id);
   }, []);
 
-  const permisosVigentes = useMemo(() => permisos.filter((p) => !p.anulado), [permisos]);
+  // Solo los registros que de verdad cierran la barda: uno "visitado" de ayer
+  // ya no cuenta (esa barda volvió a la lista de pendientes hoy).
+  const permisosVigentes = useMemo(() => permisos.filter(bardaAtendida), [permisos]);
   const pendientes = useMemo(() => bardasPendientes(todas, permisos), [todas, permisos]);
-  const visitadas = permisosVigentes.length;
-  const conPermiso = permisosVigentes.filter((p) => p.permiso).length;
+  const porEstado = useMemo(() => {
+    const cuenta = new Map(ESTADOS.map((e) => [e.id, 0]));
+    for (const p of permisosVigentes) {
+      const id = estadoDeRegistro(p);
+      if (cuenta.has(id)) cuenta.set(id, cuenta.get(id) + 1);
+    }
+    return cuenta;
+  }, [permisosVigentes]);
 
   // Bardas que otro equipo ya trae en su recorrido (las propias no cuentan:
   // ese color es "azul con número", ya lo distingue el mapa).
@@ -182,9 +252,79 @@ export default function Bardas() {
     return m;
   }, [reservas, equipo]);
 
+  // Guarda la jornada en el teléfono a cada cambio, para poder retomarla si la
+  // app se cierra. Mientras haya una sesión previa esperando respuesta no se
+  // toca nada: si no, el arranque en fase 'config' la borraría.
+  useEffect(() => {
+    if (sesionPrevia) return;
+    if (fase === 'recorrido' && ruta.length > 0) {
+      guardarSesion({ equipo, cantidad, fase, ruta, porCalles });
+    } else if (equipo.trim()) {
+      // Aunque no traiga ruta, se recuerda QUIÉN es: así, al reabrir, la app
+      // reconoce sus propias reservas en vez de verlas como de otro equipo.
+      guardarSesion({ equipo, cantidad, fase: 'config', ruta: [] });
+    }
+  }, [equipo, cantidad, fase, ruta, porCalles, sesionPrevia]);
+
+  // Renueva la reserva mientras el equipo sigue caminando: dura poco a
+  // propósito, así el que desaparece la suelta pronto y el que sigue ahí no
+  // la pierde.
+  useEffect(() => {
+    if (fase !== 'recorrido' || ruta.length === 0) return;
+    const id = setInterval(
+      () => reservarBardas(ruta.map((b) => b.id), equipo.trim()),
+      10 * 60000
+    );
+    return () => clearInterval(id);
+  }, [fase, ruta, equipo]);
+
+  function arrancarGPS() {
+    detenerGPS.current = iniciarGPS(
+      'bardas',
+      (p) => {
+        setMiPos([p.lat, p.lng]);
+        setGpsError('');
+      },
+      (msg) => {
+        setGpsError(msg);
+        setCalculando(false);
+      }
+    );
+  }
+
+  // Retoma el recorrido tal cual iba: MISMA ruta y mismo orden, sin recalcular
+  // (recalcular le cambiaría el camino a media jornada). Solo se quitan las
+  // bardas que alguien haya registrado mientras la app estuvo cerrada.
+  function retomarRecorrido() {
+    const guardada = sesionPrevia;
+    setSesionPrevia(null);
+    const vivas = new Set(pendientes.map((b) => String(b.id)));
+    const rutaViva = guardada.ruta.filter((b) => vivas.has(String(b.id)));
+    setRuta(rutaViva);
+    setPorCalles(Boolean(guardada.porCalles));
+    yaCalculada.current = true;
+    setFase('recorrido');
+    setError('');
+    setGpsError('');
+    reservarBardas(rutaViva.map((b) => b.id), equipo.trim()); // vuelve a apartarlas
+    arrancarGPS();
+  }
+
+  // No quiere retomar: se sueltan esas bardas en el acto para que otro equipo
+  // las pueda tomar sin esperar a que venza la reserva.
+  function descartarSesionPrevia() {
+    if (sesionPrevia?.ruta?.length) {
+      liberarReservasBardas(sesionPrevia.ruta.map((b) => b.id));
+    }
+    borrarSesion();
+    setSesionPrevia(null);
+  }
+
   function terminarRecorrido() {
     if (detenerGPS.current) detenerGPS.current();
     detenerGPS.current = null;
+    if (ruta.length > 0) liberarReservasBardas(ruta.map((b) => b.id));
+    borrarSesion();
     setFase('config');
     setRuta([]);
   }
@@ -208,7 +348,9 @@ export default function Bardas() {
       }
       return false;
     });
-  }, [agregando, registrando, fase]);
+    // `ruta` va en la lista porque terminarRecorrido la usa para soltar las
+    // reservas: sin esto se quedaría con una copia vieja.
+  }, [agregando, registrando, fase, ruta]);
 
   // --- agregar una barda que no está en el catálogo -------------------------
   // Si el equipo pega un link de Maps, esa ubicación manda sobre la del GPS
@@ -297,17 +439,7 @@ export default function Bardas() {
     yaCalculada.current = false;
     setCalculando(true);
     setFase('recorrido');
-    detenerGPS.current = iniciarGPS(
-      'bardas',
-      (p) => {
-        setMiPos([p.lat, p.lng]);
-        setGpsError('');
-      },
-      (msg) => {
-        setGpsError(msg);
-        setCalculando(false);
-      }
-    );
+    arrancarGPS();
   }
 
   // Bardas pendientes que NINGÚN OTRO equipo trae ya en su ruta: se consulta
@@ -371,11 +503,12 @@ export default function Bardas() {
       const visita = porId.get(String(b.id));
       const orden = enRuta.get(String(b.id));
       const apartada = reservasAjenas.get(String(b.id));
+      const info = visita ? infoEstado(visita) : null;
       let color = '#9aa5b1';
       let texto = '';
-      if (visita) {
-        color = visita.permiso ? '#2a9d3a' : '#c1121f';
-        texto = visita.permiso ? '✓' : '✕';
+      if (info) {
+        color = info.color;
+        texto = info.pin;
       } else if (orden) {
         color = '#1d6fd1';
         texto = String(orden);
@@ -386,8 +519,8 @@ export default function Bardas() {
       pinBarda([b.lat, b.lng], texto, color)
         .bindTooltip(
           `<strong>${b.direccion || 'Barda ' + b.id}</strong><br>${b.colonia || ''}` +
-            (visita
-              ? `<br>${visita.permiso ? '✅ Con permiso' : '❌ Sin permiso'}`
+            (info
+              ? `<br>${info.etiqueta}${visita.equipo ? ` · ${visita.equipo}` : ''}`
               : apartada
               ? `<br>🔒 Apartada por ${apartada.equipo || 'otro equipo'}`
               : '')
@@ -442,29 +575,29 @@ export default function Bardas() {
     encuadrado.current = ruta.length;
   }, [map, ruta, miPos]);
 
-  // --- registrar el permiso -------------------------------------------------
+  // --- registrar el resultado de la visita ----------------------------------
   function abrirRegistro(b) {
     const previo = permisosVigentes.find((p) => String(p.barda_id) === String(b.id));
     setRegistrando({ ...b, previo: previo || null });
     setForm(
       previo
         ? {
-            permiso: previo.permiso,
+            estado: estadoDeRegistro(previo),
             nombre: previo.nombre || '',
             telefono: previo.telefono || '',
             aCambio: previo.a_cambio || '',
             notas: previo.notas || ''
           }
-        : { permiso: null, nombre: '', telefono: '', aCambio: '', notas: '' }
+        : { estado: null, nombre: '', telefono: '', aCambio: '', notas: '' }
     );
   }
 
   async function guardar() {
-    if (!registrando || form.permiso === null) return;
+    if (!registrando || !form.estado) return;
     setGuardando(true);
     const fila = {
       barda_id: String(registrando.id),
-      permiso: form.permiso,
+      estado: form.estado,
       nombre: form.nombre.trim() || null,
       telefono: form.telefono.trim() || null,
       a_cambio: form.aCambio.trim() || null,
@@ -479,10 +612,13 @@ export default function Bardas() {
       setError('No se pudo guardar en la nube (¿sin señal?). Intenta de nuevo.');
       return;
     }
-    setPermisos((p) => [...p.filter((x) => String(x.barda_id) !== fila.barda_id), fila]);
+    const guardada = { ...fila, anulado: false, actualizado: new Date().toISOString() };
+    setPermisos((p) => [...p.filter((x) => String(x.barda_id) !== fila.barda_id), guardada]);
     // Sale de la ruta de hoy; el resto conserva su orden (no se recalcula sola
-    // para no cambiarle el camino al equipo a media jornada).
+    // para no cambiarle el camino al equipo a media jornada). Y como ya se
+    // atendió, se suelta la reserva: nadie más tiene por qué esperarla.
     setRuta((r) => r.filter((b) => String(b.id) !== fila.barda_id));
+    liberarReservasBardas([fila.barda_id]);
     setRegistrando(null);
     setError('');
   }
@@ -501,6 +637,19 @@ export default function Bardas() {
     );
     setRegistrando(null);
     setError('');
+  }
+
+  // --- corte para la oficina -------------------------------------------------
+  async function exportarCorte() {
+    setExportando(true);
+    setError('');
+    try {
+      const { descargarCorteBardas } = await import('../lib/corteBardas.js');
+      await descargarCorteBardas(todas, permisos);
+    } catch (e) {
+      setError('No se pudo armar el Excel del corte. (' + e.message + ')');
+    }
+    setExportando(false);
   }
 
   function comoLlegar(b) {
@@ -543,9 +692,15 @@ export default function Bardas() {
 
         {!cargando && (
           <p style={{ fontSize: '0.9rem' }}>
-            <strong>{pendientes.length}</strong> pendientes ·{' '}
-            <strong>{conPermiso}</strong> con permiso ·{' '}
-            <strong>{visitadas - conPermiso}</strong> sin permiso
+            <strong>{pendientes.length}</strong> pendientes
+            {ESTADOS.map((e) =>
+              porEstado.get(e.id) ? (
+                <span key={e.id}>
+                  {' · '}
+                  <strong>{porEstado.get(e.id)}</strong> {e.corto.toLowerCase()}
+                </span>
+              ) : null
+            )}
             {reservasAjenas.size > 0 && (
               <>
                 {' · '}
@@ -556,7 +711,30 @@ export default function Bardas() {
         )}
 
         {/* ---------- ANTES DE EMPEZAR ---------- */}
-        {!cargando && fase === 'config' && (
+        {/* ---------- RETOMAR UN RECORRIDO QUE SE QUEDÓ A MEDIAS ---------- */}
+        {!cargando && sesionPrevia && (
+          <div className="tarjeta-equipo" style={{ borderLeftColor: '#e8a33d' }}>
+            <strong>Traías un recorrido sin terminar</strong>
+            <div className="datos">
+              {sesionPrevia.equipo ? sesionPrevia.equipo + ' · ' : ''}
+              {sesionPrevia.ruta.length} bardas
+            </div>
+            <p className="nota" style={{ marginTop: 6 }}>
+              Se retoma con las mismas bardas y en el mismo orden que traías. Si
+              empiezas uno nuevo, esas bardas se sueltan para que las tome otro equipo.
+            </p>
+            <div className="fila" style={{ marginTop: 8 }}>
+              <button className="boton primario" onClick={retomarRecorrido}>
+                ▶ Retomar recorrido
+              </button>
+              <button className="boton suave" onClick={descartarSesionPrevia}>
+                Empezar uno nuevo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!cargando && !sesionPrevia && fase === 'config' && (
           <>
             <label className="etiqueta">Tu equipo</label>
             <input
@@ -802,7 +980,7 @@ export default function Bardas() {
                   {b.foto ? ' 📷' : ''}
                   <div style={{ fontSize: '0.8rem', color: '#666' }}>
                     {b.colonia}
-                    {est ? (est.permiso ? ' · ✅ con permiso' : ' · ❌ sin permiso') : ' · pendiente'}
+                    {est ? ` · ${infoEstado(est)?.etiqueta || 'atendida'}` : ' · pendiente'}
                     {b.lat == null ? ' · sin ubicación' : ''}
                   </div>
                 </div>
@@ -814,6 +992,21 @@ export default function Bardas() {
           </>
         )}
 
+        {/* ---------- CORTE PARA LA OFICINA ---------- */}
+        {!cargando && (
+          <>
+            <h3>Corte</h3>
+            <p className="nota" style={{ marginTop: 0 }}>
+              Baja un Excel con todas las bardas, en qué quedó cada una y qué equipo
+              la hizo.
+            </p>
+            <div className="fila">
+              <button className="boton suave mini" onClick={exportarCorte} disabled={exportando}>
+                {exportando ? 'Armando el Excel…' : '📄 Exportar corte a Excel'}
+              </button>
+            </div>
+          </>
+        )}
 
         {/* ---------- FORMULARIO ---------- */}
         {registrando && (
@@ -824,7 +1017,7 @@ export default function Bardas() {
             {registrando.previo && (
               <div className="aviso" style={{ background: '#fff8e6', borderColor: '#f0d9a0' }}>
                 Esta barda ya se registró como{' '}
-                <strong>{registrando.previo.permiso ? 'CON permiso' : 'SIN permiso'}</strong>
+                <strong>{infoEstado(registrando.previo)?.corto || 'atendida'}</strong>
                 {registrando.previo.equipo ? ` (${registrando.previo.equipo})` : ''}. Puedes
                 corregir los datos y volver a guardar, o quitar el registro si fue por error.
               </div>
@@ -852,21 +1045,29 @@ export default function Bardas() {
               </button>
             </div>
 
-            <h3>¿Le dieron permiso de pintar?</h3>
-            <div className="fila">
-              <button
-                className={form.permiso === true ? 'boton exito' : 'boton suave'}
-                onClick={() => setForm((f) => ({ ...f, permiso: true }))}
-              >
-                ✅ Sí
-              </button>
-              <button
-                className={form.permiso === false ? 'boton peligro' : 'boton suave'}
-                onClick={() => setForm((f) => ({ ...f, permiso: false }))}
-              >
-                ❌ No
-              </button>
+            <h3>¿Cómo te fue en esta barda?</h3>
+            <div className="fila" style={{ flexWrap: 'wrap' }}>
+              {ESTADOS.map((e) => (
+                <button
+                  key={e.id}
+                  className={form.estado === e.id ? 'boton ' + e.boton : 'boton suave'}
+                  style={
+                    form.estado === e.id && e.boton === 'suave'
+                      ? { background: e.color, color: '#fff', borderColor: e.color }
+                      : undefined
+                  }
+                  onClick={() => setForm((f) => ({ ...f, estado: e.id }))}
+                >
+                  {e.etiqueta}
+                </button>
+              ))}
             </div>
+            {form.estado === 'visitado' && (
+              <p className="nota" style={{ marginTop: 4 }}>
+                Sale de la ruta de hoy, pero vuelve a la lista de pendientes mañana:
+                a esta barda todavía no se le ha preguntado a nadie.
+              </p>
+            )}
 
             <label className="etiqueta">Nombre de quien atendió</label>
             <input
@@ -884,7 +1085,7 @@ export default function Bardas() {
               onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))}
             />
 
-            {form.permiso === true && (
+            {form.estado === 'con_permiso' && (
               <>
                 <label className="etiqueta">¿Qué se dará a cambio?</label>
                 <input
@@ -907,7 +1108,7 @@ export default function Bardas() {
               <button
                 className="boton primario"
                 onClick={guardar}
-                disabled={form.permiso === null || guardando}
+                disabled={!form.estado || guardando}
               >
                 {guardando ? 'Guardando…' : 'Guardar'}
               </button>
@@ -915,9 +1116,9 @@ export default function Bardas() {
                 Cancelar
               </button>
             </div>
-            {form.permiso === null && (
+            {!form.estado && (
               <p className="nota" style={{ marginTop: 6 }}>
-                Marca primero si dieron permiso o no.
+                Marca primero cómo te fue.
               </p>
             )}
             {registrando.previo && (

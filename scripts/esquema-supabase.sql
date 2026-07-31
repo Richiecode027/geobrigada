@@ -231,3 +231,22 @@ create policy "equipos renuevan o liberan su reserva"
 
 create policy "todos ven que bardas estan apartadas"
   on bardas_reservadas for select to anon using (true);
+
+-- ---------------------------------------------------------------------------
+-- Más resultados de visita (jul 2026): "permiso sí/no" no alcanzaba. Ahora
+-- cada visita guarda un ESTADO:
+--   con_permiso  · el dueño dejó pintar
+--   sin_permiso  · el dueño no quiso
+--   visitado     · se fue, pero no había nadie a quién preguntarle. Sale de
+--                  la ruta de HOY y vuelve a pendientes al día siguiente (la
+--                  app lo decide comparando "actualizado" con la fecha de hoy).
+--   no_habitado  · casa sola/abandonada: no hay a quién pedirle permiso, así
+--                  que sale de pendientes para siempre.
+-- La columna "permiso" se conserva (la usan el Excel de corte y los scripts):
+-- queda en true/false para los dos primeros y en null para los otros dos.
+
+alter table bardas_permisos add column if not exists estado text;
+
+update bardas_permisos
+   set estado = case when permiso then 'con_permiso' else 'sin_permiso' end
+ where estado is null;

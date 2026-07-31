@@ -21,10 +21,35 @@ export async function cargarBardas() {
   return catalogo;
 }
 
-// Un registro anulado (se tocó la barda equivocada) no cuenta como visita: esa
-// barda vuelve a la lista de pendientes.
+const mismoDia = (iso) => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const hoy = new Date();
+  return (
+    d.getFullYear() === hoy.getFullYear() &&
+    d.getMonth() === hoy.getMonth() &&
+    d.getDate() === hoy.getDate()
+  );
+};
+
+// ¿Este registro saca la barda de la lista de pendientes?
+//
+// - Anulado (se tocó la barda equivocada): no, vuelve a pendientes.
+// - "visitado" quiere decir "fui pero no había nadie": no se le preguntó a
+//   nadie todavía, así que solo sale de la lista de HOY — mañana hay que
+//   volver a pasar.
+// - Los demás resultados (con permiso, sin permiso, no habitado) ya cerraron
+//   el asunto: nadie tiene que volver.
+// - Registros viejos, de antes de que existiera `estado`: se guían por la
+//   columna `permiso` de siempre.
+export function bardaAtendida(p) {
+  if (!p || p.anulado) return false;
+  if (p.estado === 'visitado') return mismoDia(p.actualizado);
+  return true;
+}
+
 const visitadas = (permisos) =>
-  new Set((permisos || []).filter((p) => !p.anulado).map((p) => String(p.barda_id)));
+  new Set((permisos || []).filter(bardaAtendida).map((p) => String(p.barda_id)));
 
 // Bardas que todavía se pueden visitar y SÍ se pueden rutear (tienen
 // coordenadas). `permisos` viene de la nube (bardas_permisos).

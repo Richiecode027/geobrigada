@@ -94,9 +94,30 @@ para brigadistas, registro de material repartido.
   tiempo y cerca uno del otro, el algoritmo determinista les daría LA MISMA
   ruta. Por eso, justo antes de calcular, se consulta `bardas_reservadas`
   (tabla nueva) y se excluyen las bardas que otro equipo ya trae en su ruta;
-  al terminar de calcular, el equipo aparta las suyas por 3 horas (vencen
-  solas, por si cierra la app sin avisar). Si la consulta falla, se sigue sin
-  filtrar (mejor una posible repetida que trabar la ruta).
+  al terminar de calcular, el equipo aparta las suyas. Si la consulta falla,
+  se sigue sin filtrar (mejor una posible repetida que trabar la ruta).
+  La reserva dura POCO (45 min) y se renueva sola cada 10 min mientras el
+  equipo trae la app abierta: con las 3 horas fijas del primer intento, a
+  quien se le cerraba la app dejaba sus bardas bloqueadas toda la tarde para
+  todos, incluido él. Además la jornada se guarda en el teléfono
+  (localStorage `geobrigada_bardas_sesion`: equipo, cantidad, fase y ruta), y
+  al reabrir se ofrece "Retomar recorrido" con LA MISMA ruta y orden — sin
+  recalcular, solo quitando lo que ya se registró. Guardar una barda,
+  "Terminar recorrido" o "Empezar uno nuevo" sueltan la reserva en el acto.
+  Ojo: el nombre del equipo se guarda siempre, porque de ahí depende que la
+  app reconozca sus PROPIAS reservas en vez de verlas como de otro.
+- Cada visita guarda un ESTADO en `bardas_permisos.estado` (la columna vieja
+  `permiso` se sigue llenando para el Excel y los scripts): `con_permiso`,
+  `sin_permiso`, `visitado` (fue pero no había nadie) y `no_habitado` (casa
+  sola). Los tres últimos cierran la barda para siempre EXCEPTO `visitado`,
+  que solo sale de la ruta del día y vuelve a pendientes al siguiente — a esa
+  barda nunca se le preguntó a nadie (ver bardaAtendida en src/lib/bardas.js).
+- Corte para la oficina: botón "Exportar corte a Excel" en la vista Bardas
+  (src/lib/corteBardas.js). Respeta columna por columna el reporte que ya se
+  usa (NO./BRIGADA/DIRECCION/COLONIA/DISTRITO//REFERENCIAS/CON PERMISO/SIN
+  PERMISO/COMPROMISO) y agrega al final EQUIPO, ESTADO, ATENDIÓ, TELÉFONO,
+  NOTAS y REGISTRADO. `xlsx` es dependencia de runtime pero se carga con
+  import diferido: solo pesa al tocar el botón, no en la app del brigadista.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

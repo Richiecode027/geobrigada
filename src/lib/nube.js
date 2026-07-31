@@ -188,13 +188,25 @@ export async function cargarPermisosBardas() {
 
 // Una fila por barda: si se vuelve a visitar, se actualiza la misma
 // (merge-duplicates sobre la llave primaria barda_id).
+//
+// El resultado de la visita viaja en `estado` (con_permiso, sin_permiso,
+// visitado, no_habitado). La columna vieja `permiso` se sigue llenando —
+// true/false para los dos primeros, null para los otros — porque el Excel de
+// corte y los scripts la leen.
 export async function guardarPermisoBarda(p) {
   if (!nubeConfigurada()) return false;
+  const permiso =
+    p.estado === 'con_permiso' ? true : p.estado === 'sin_permiso' ? false : null;
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_permisos`, {
       method: 'POST',
       headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ ...p, anulado: false, actualizado: new Date().toISOString() })
+      body: JSON.stringify({
+        ...p,
+        permiso,
+        anulado: false,
+        actualizado: new Date().toISOString()
+      })
     });
     return res.ok;
   } catch {
@@ -274,7 +286,13 @@ export async function cargarBardasNuevas() {
 // Evita que dos equipos calculen la MISMA ruta si arrancan al mismo tiempo:
 // al armar su recorrido, cada equipo aparta esas bardas por unas horas.
 
-const RESERVA_HORAS = 3;
+// La reserva dura poco A PROPÓSITO y se renueva sola mientras el equipo trae
+// la app abierta (ver renovarReservas en Bardas.jsx). Antes duraba 3 horas
+// fijas, y si a alguien se le cerraba la app sus bardas quedaban bloqueadas
+// toda la tarde — para nadie: ni para él ni para los demás. Con un plazo
+// corto + renovación, el equipo que sigue caminando las conserva y el que
+// desapareció las suelta en menos de una hora.
+const RESERVA_MINUTOS = 45;
 
 export async function cargarReservasBardas() {
   if (!nubeConfigurada()) return [];
@@ -289,7 +307,7 @@ export async function cargarReservasBardas() {
 
 export async function reservarBardas(ids, equipo) {
   if (!nubeConfigurada() || ids.length === 0) return;
-  const vence = new Date(Date.now() + RESERVA_HORAS * 3600000).toISOString();
+  const vence = new Date(Date.now() + RESERVA_MINUTOS * 60000).toISOString();
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/bardas_reservadas`, {
       method: 'POST',
@@ -298,6 +316,23 @@ export async function reservarBardas(ids, equipo) {
     });
   } catch {
     /* si falla, la ruta se calculó igual; en el peor caso otro equipo se topa con las mismas bardas */
+  }
+}
+
+// Suelta bardas apartadas (al terminar el recorrido o al registrarlas): se
+// vencen en el acto en vez de esperar. No se borra la fila — la tabla no
+// permite DELETE desde el teléfono, igual que bardas_permisos.
+export async function liberarReservasBardas(ids) {
+  if (!nubeConfigurada() || ids.length === 0) return;
+  const lista = ids.map((i) => `"${String(i).replace(/"/g, '')}"`).join(',');
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/bardas_reservadas?barda_id=in.(${encodeURIComponent(lista)})`, {
+      method: 'PATCH',
+      headers: { ...cabeceras(), Prefer: 'return=minimal' },
+      body: JSON.stringify({ vence: new Date().toISOString() })
+    });
+  } catch {
+    /* si falla, la reserva vence sola en RESERVA_MINUTOS */
   }
 }
 
