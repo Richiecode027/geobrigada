@@ -228,6 +228,20 @@ textarea { resize: vertical; }
   font-size: 0.8rem;
 }
 
+/* Número del distrito local sobre el mapa. Va discreto: es referencia, los
+   pines de bardas tienen que seguir siendo lo que resalta. */
+.etiqueta-distrito { background: none; border: none; }
+.etiqueta-distrito div {
+  background: rgba(255,255,255,0.82);
+  border: 1.5px solid;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 17px;
+  height: 20px;
+}
+
 /* Flecha de "aquí estás tú": gira con la brújula del teléfono. La transición
    suaviza el giro para que no salte de golpe entre lectura y lectura. */
 .flecha-yo { background: none; border: none; }

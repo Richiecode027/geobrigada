@@ -122,16 +122,30 @@ para brigadistas, registro de material repartido.
   tocar el botón, nunca en la app del brigadista.
 - Al agregar una barda nueva, src/lib/ubicacion.js llena solos colonia,
   distrito y calle desde la ubicación. La COLONIA sale del catálogo INEGI que
-  ya trae la app (local, sin internet); la CALLE de Nominatim (el número casi
-  nunca está en OSM para Morelia, ese se teclea); el DISTRITO se deduce —la
-  app no tiene los polígonos de distritos electorales— del propio catálogo de
-  bardas: primero por nombre de colonia y si no, por la barda conocida más
-  cercana (máx. 2.5 km, si no se deja vacío). Probado dejando fuera cada barda
-  y adivinando su distrito con las otras 164: 164 aciertos, 0 errores, 1 vacía.
-  Dirección y colonia quedan editables porque son aproximación; el distrito NO
-  se pregunta (ubicación + calle + colonia ya identifican la barda, y un campo
-  más estorba en la calle) pero sí se guarda, porque el corte lo lleva como
-  columna. El número de casa no se pide: OSM casi no lo tiene en Morelia.
+  ya trae la app (local, sin internet); la CALLE de Nominatim; el DISTRITO del
+  trazo OFICIAL del INE (ver abajo), con la deducción vieja (por colonia o
+  barda vecina) ya solo de respaldo si el punto cae fuera de Morelia.
+  Dirección y colonia quedan editables; el distrito NO se pregunta (ubicación
+  + calle + colonia ya identifican la barda) pero sí se guarda, porque el
+  corte lo lleva como columna. El número de casa no se pide: OSM casi no lo
+  tiene en Morelia.
+- DISTRITOS LOCALES (jul 2026): `public/distritos_morelia.json` (71 KB) trae
+  los límites oficiales de los 4 distritos electorales LOCALES que cubren el
+  municipio de Morelia — 10, 11, 16 y 17 — recortados al municipio (incluye
+  las tenencias, que son parte de él). Se generan con
+  `node scripts/build-distritos.mjs "<ruta al .7z del INE>"`, que baja de
+  https://cartografia.ine.mx/sige8/productosCartograficos/bases (producto
+  "BGD - BASE GEOGRÁFICA DIGITAL", entidad Michoacán, Shapefile, ~58 MB .7z,
+  corte dic 2025; se descomprime con 7zip-min, viene en UTM 14N y el script
+  reproyecta y simplifica). OJO: la base trae DOS capas parecidas,
+  DISTRITO_FEDERAL y DISTRITO_LOCAL, con numeraciones distintas — se usa la
+  LOCAL, y el script ABORTA si los distritos que salen no son exactamente
+  10, 11, 16 y 17 (esa es la señal de que se agarró la capa equivocada o
+  cambió la distritación). Verificado con
+  `node scripts/debug-distritos.mjs`: de las 165 bardas con distrito escrito
+  a mano en el Excel, las 165 coinciden con el polígono oficial, 0 discrepan,
+  y ubica el 100% de las bardas con coordenadas. La vista Bardas los dibuja
+  con un botón para ocultarlos (src/lib/distritos.js).
 - Tocar una barda (pin del mapa o lista) despliega el panel si estaba plegado
   y baja solo hasta su ficha: antes había que abrirlo y buscarla a mano.
 - La ubicación propia se ve SIEMPRE, no solo en recorrido: fuera de ruta el

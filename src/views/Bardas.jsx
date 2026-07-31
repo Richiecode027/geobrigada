@@ -7,6 +7,7 @@ import { comprimirImagen } from '../lib/imagen.js';
 import { coordsDeLinkMaps } from '../lib/mapsLink.js';
 import { ubicacionAproximada } from '../lib/ubicacion.js';
 import { seguirBrujula, pedirPermisoBrujula } from '../lib/brujula.js';
+import { cargarDistritos, COLOR_DISTRITO } from '../lib/distritos.js';
 // Solo las etiquetas y la función: la librería pesada (xlsx) se carga dentro
 // de descargarCorteBardas, hasta que alguien toca el botón.
 import { FILTROS as FILTROS_CORTE, descargarCorteBardas } from '../lib/corteBardas.js';
@@ -138,6 +139,7 @@ export default function Bardas() {
   const map = useMap(mapaRef);
   const capaBardas = useRef(null);
   const capaYo = useRef(null);
+  const capaDistritos = useRef(null);
   const detenerGPS = useRef(null);
   const yaCalculada = useRef(false);
 
@@ -147,6 +149,7 @@ export default function Bardas() {
   const [miPos, setMiPos] = useState(null);
   // Grados a los que mira el teléfono (null si no tiene brújula).
   const [rumbo, setRumbo] = useState(null);
+  const [verDistritos, setVerDistritos] = useState(true);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
@@ -642,6 +645,58 @@ export default function Bardas() {
     return () => clearTimeout(tid);
   }, [map, panelPlegado]);
 
+  // Límites de los distritos locales (trazo oficial del INE). Va por debajo de
+  // los pines y sin relleno fuerte: es referencia, no el asunto principal.
+  useEffect(() => {
+    if (!map) return;
+    if (capaDistritos.current) {
+      capaDistritos.current.remove();
+      capaDistritos.current = null;
+    }
+    if (!verDistritos) return;
+
+    let vivo = true;
+    cargarDistritos()
+      .then(({ distritos }) => {
+        if (!vivo || !map) return;
+        const g = L.layerGroup().addTo(map);
+        for (const z of distritos) {
+          const color = COLOR_DISTRITO[z.d] || '#888';
+          L.polygon(z.rings, {
+            color,
+            weight: 2,
+            opacity: 0.85,
+            fillColor: color,
+            fillOpacity: 0.06,
+            dashArray: '5 4',
+            interactive: false
+          })
+            .addTo(g);
+          // El número, en el punto más ancho de la parte más grande.
+          const mayor = z.rings.reduce((a, b) => (b.length > a.length ? b : a), z.rings[0]);
+          const centro = L.polygon(mayor).getBounds().getCenter();
+          L.marker(centro, {
+            interactive: false,
+            icon: L.divIcon({
+              className: 'etiqueta-distrito',
+              html: `<div style="border-color:${color};color:${color}">D${z.d}</div>`,
+              iconSize: [40, 20],
+              iconAnchor: [20, 10]
+            })
+          }).addTo(g);
+        }
+        g.eachLayer((c) => c.bringToBack?.());
+        capaDistritos.current = g;
+      })
+      .catch(() => {
+        /* sin catálogo de distritos el mapa funciona igual */
+      });
+
+    return () => {
+      vivo = false;
+    };
+  }, [map, verDistritos]);
+
   // Dónde estás y hacia dónde ves. Con brújula sale una flecha que gira con el
   // teléfono (caminando en una colonia desconocida, "hacia dónde voy" importa
   // más que "dónde estoy"); sin brújula, el punto de siempre.
@@ -835,6 +890,17 @@ export default function Bardas() {
               </>
             )}
           </p>
+        )}
+
+        {!cargando && (
+          <div className="fila">
+            <button
+              className={verDistritos ? 'boton primario mini' : 'boton suave mini'}
+              onClick={() => setVerDistritos((v) => !v)}
+            >
+              {verDistritos ? '🗺️ Ocultar distritos' : '🗺️ Ver distritos'}
+            </button>
+          </div>
         )}
 
         {/* ---------- ANTES DE EMPEZAR ---------- */}

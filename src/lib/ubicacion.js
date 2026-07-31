@@ -6,17 +6,16 @@
 //  - COLONIA: del catálogo del INEGI que ya trae la app
 //    (public/colonias_morelia.json). Es local: funciona sin internet y son los
 //    límites oficiales, mejor que lo que contestaría un servicio de mapas.
-//  - DISTRITO: la app NO tiene los límites de los distritos electorales, así
-//    que se deduce del propio catálogo de bardas — cada colonia ya capturada
-//    trae su distrito, y de las 43 colonias con dato ninguna se contradice.
-//    Si la colonia no está en ese listado, se usa el distrito de la barda
-//    conocida más cercana (los distritos son zonas continuas). Es una
-//    APROXIMACIÓN: por eso el campo queda editable en el formulario.
+//  - DISTRITO: del trazo OFICIAL del INE (public/distritos_morelia.json). Es
+//    local y exacto. Si el punto cae fuera del municipio de Morelia se recurre
+//    al método viejo: deducirlo del propio catálogo de bardas, por nombre de
+//    colonia y si no por la barda conocida más cercana.
 //  - CALLE: de OpenStreetMap (Nominatim). Requiere internet. El número casi
 //    nunca está cargado en Morelia, así que ese se escribe a mano.
 
 import { haversine } from './geo.js';
 import { coloniaEnPunto } from './colonias.js';
+import { distritoEnPunto } from './distritos.js';
 
 const normalizar = (s) =>
   String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -82,7 +81,26 @@ export async function ubicacionAproximada(lat, lng, bardas) {
   } catch {
     /* sin catálogo: se queda en blanco */
   }
-  const { distrito, segun } = distritoAproximado(lat, lng, colonia, bardas);
+  // El distrito ya no se adivina: se consulta el trazo oficial del INE. La
+  // deducción vieja (por colonia o barda vecina) queda solo de respaldo, para
+  // un punto que caiga fuera del municipio o si el catálogo no cargó.
+  let distrito = '';
+  let segun = null;
+  try {
+    const oficial = await distritoEnPunto(lat, lng);
+    if (oficial != null) {
+      distrito = String(oficial);
+      segun = 'el mapa oficial del INE';
+    }
+  } catch {
+    /* sin catálogo: se usa el respaldo de abajo */
+  }
+  if (!distrito) {
+    const aprox = distritoAproximado(lat, lng, colonia, bardas);
+    distrito = aprox.distrito;
+    segun = aprox.segun;
+  }
+
   const calle = await calleAproximada(lat, lng);
   return { colonia, distrito, distritoSegun: segun, calle };
 }
