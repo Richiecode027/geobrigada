@@ -56,7 +56,7 @@ const ESTADOS = [
   { id: 'visitado', etiqueta: '🚪 No había nadie', corto: 'Visitado', color: '#7b61c9', pin: '?', boton: 'suave' },
   // Amarillo, no gris: en gris se confundía con las que faltan por visitar,
   // que es justo lo contrario (a esta ya nadie tiene que volver).
-  { id: 'no_habitado', etiqueta: '🏚 Casa sola / abandonada', corto: 'No habitado', color: '#ffd21e', colorTexto: '#4a3b00', pin: '🏚', boton: 'suave' }
+  { id: 'no_habitado', etiqueta: '🏚 Casa sola / abandonada', corto: 'No habitado', color: '#ffd21e', colorTexto: '#4a3b00', pin: '—', boton: 'suave' }
 ];
 const ESTADO_POR_ID = new Map(ESTADOS.map((e) => [e.id, e]));
 
