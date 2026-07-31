@@ -149,7 +149,10 @@ export default function Bardas() {
   const [miPos, setMiPos] = useState(null);
   // Grados a los que mira el teléfono (null si no tiene brújula).
   const [rumbo, setRumbo] = useState(null);
-  const [verDistritos, setVerDistritos] = useState(true);
+  // Apagado por omisión: dibujar los 4 polígonos encima de ~250 pines se
+  // siente pesado en el teléfono, y para caminar no hacen falta. Quien los
+  // necesite los prende.
+  const [verDistritos, setVerDistritos] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
