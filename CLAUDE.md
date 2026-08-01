@@ -139,9 +139,10 @@ para brigadistas, registro de material repartido.
   permiso. Sigue el reporte que ya se usa (NO./BRIGADA/DIRECCION/COLONIA/
   DISTRITO//REFERENCIAS/COMPROMISO) pero con UNA sola columna ESTADO en vez
   de las casillas CON PERMISO y SIN PERMISO (no alcanzaban para los cuatro
-  resultados), más EQUIPO, ATENDIÓ, TELÉFONO, NOTAS y REGISTRADO. `xlsx` es
-  dependencia de runtime pero queda en su propio chunk: solo se descarga al
-  tocar el botón, nunca en la app del brigadista.
+  resultados), más BUENA (de bardas_calidad), EQUIPO, ATENDIÓ, TELÉFONO,
+  NOTAS y REGISTRADO. `xlsx` es dependencia de runtime pero queda en su
+  propio chunk: solo se descarga al tocar el botón, nunca en la app del
+  brigadista.
 - Al agregar una barda nueva, src/lib/ubicacion.js llena solos colonia,
   distrito y calle desde la ubicación. La COLONIA sale del catálogo INEGI que
   ya trae la app (local, sin internet); la CALLE de Nominatim; el DISTRITO del
@@ -214,7 +215,9 @@ para brigadistas, registro de material repartido.
 - Filtro de qué se ve en el mapa (ago 2026): checkboxes por resultado (sin
   visitar, con permiso, sin permiso, visitado, no habitado) sobre el efecto
   que dibuja los pines — no son listas aparte, así que no hay que
-  mantenerlas sincronizadas con nada más.
+  mantenerlas sincronizadas con nada más. Aparte va "solo las marcadas como
+  buenas": no es un resultado de visita, es la etiqueta de bardas_calidad, así
+  que se cruza con cualquier estado en vez de vivir en el mismo Set.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

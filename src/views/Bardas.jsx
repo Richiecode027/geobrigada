@@ -204,6 +204,9 @@ export default function Bardas() {
       n.has(id) ? n.delete(id) : n.add(id);
       return n;
     });
+  // Aparte de los ESTADOS: "buena" no es un resultado de visita, es una
+  // etiqueta que se le pone a cualquier barda sin importar su estado.
+  const [soloBuenas, setSoloBuenas] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
@@ -809,6 +812,7 @@ export default function Bardas() {
       const apartada = reservasAjenas.get(String(b.id));
       const info = visita ? infoEstado(visita) : null;
       if (!filtrosMapa.has(info ? info.id : 'pendiente')) continue;
+      if (soloBuenas && !esBuena(b.id)) continue;
       const miaApartada = !visita && !orden && esMia.has(String(b.id));
       let color = '#9aa5b1';
       let texto = '';
@@ -854,7 +858,7 @@ export default function Bardas() {
       }
     }
     capaBardas.current = g;
-  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles, bardasBuenas, filtrosMapa]);
+  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles, bardasBuenas, filtrosMapa, soloBuenas]);
 
   // Línea punteada de tu posición a las bardas, solo cuando no se pudieron
   // bajar las calles. Capa aparte y ligera (una polilínea), para que seguir el
@@ -1194,7 +1198,7 @@ export default function Bardas() {
     setExportando(true);
     setError('');
     try {
-      await descargarCorteBardas(todas, permisos, filtroCorte);
+      await descargarCorteBardas(todas, permisos, filtroCorte, calidad);
     } catch (e) {
       setError('No se pudo armar el Excel del corte. (' + e.message + ')');
     }
@@ -1274,7 +1278,7 @@ export default function Bardas() {
               className={mostrarFiltros ? 'boton primario mini' : 'boton suave mini'}
               onClick={() => setMostrarFiltros((v) => !v)}
             >
-              🔍 Filtros{filtrosMapa.size < ESTADOS.length + 1 ? ` (${filtrosMapa.size})` : ''}
+              🔍 Filtros{filtrosMapa.size < ESTADOS.length + 1 || soloBuenas ? ' •' : ''}
             </button>
             {!agregando && (
               <button className="boton suave mini" onClick={abrirAgregar}>
@@ -1306,6 +1310,17 @@ export default function Bardas() {
                 {e.etiqueta}
               </label>
             ))}
+            <label
+              className="fila"
+              style={{ alignItems: 'center', gap: 6, marginTop: 6, borderTop: '1px solid #e3e8ee', paddingTop: 6 }}
+            >
+              <input
+                type="checkbox"
+                checked={soloBuenas}
+                onChange={(e) => setSoloBuenas(e.target.checked)}
+              />
+              ⭐ Solo las marcadas como buenas
+            </label>
           </div>
         )}
 

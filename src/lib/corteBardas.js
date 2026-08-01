@@ -40,6 +40,7 @@ const ENCABEZADOS = [
   '',
   'REFERENCIAS',
   'ESTADO',
+  'BUENA',
   'COMPROMISO ',
   'EQUIPO',
   'ATENDIÓ',
@@ -49,8 +50,8 @@ const ENCABEZADOS = [
 ];
 
 // Ancho de cada columna, en caracteres (si no, sale todo apretado y hay que
-// arrastrar 14 columnas a mano antes de poder leer el corte).
-const ANCHOS = [6, 8, 34, 22, 9, 3, 40, 24, 22, 14, 20, 14, 30, 18];
+// arrastrar 15 columnas a mano antes de poder leer el corte).
+const ANCHOS = [6, 8, 34, 22, 9, 3, 40, 24, 7, 22, 14, 20, 14, 30, 18];
 
 // Qué bardas entran en el corte.
 export const FILTROS = [
@@ -67,11 +68,15 @@ function pasaElFiltro(estado, filtro) {
 
 // bardas   = catálogo completo (public/bardas.json + las agregadas en la app)
 // permisos = filas de bardas_permisos tal como vienen de la nube
-export function filasDeCorte(bardas, permisos, filtro = 'todo') {
+// calidad  = filas de bardas_calidad tal como vienen de la nube (opcional)
+export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
   const porId = new Map();
   for (const p of permisos || []) {
     if (!p.anulado) porId.set(String(p.barda_id), p);
   }
+  const buenasPorId = new Set(
+    (calidad || []).filter((c) => c.buena).map((c) => String(c.barda_id))
+  );
 
   const filas = [];
   for (const b of bardas) {
@@ -87,6 +92,7 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo') {
       '',
       b.referencia || '',
       estado ? ETIQUETA_ESTADO[estado] || estado : 'Pendiente',
+      buenasPorId.has(String(b.id)) ? 'Sí' : '',
       p?.a_cambio || '',
       p?.equipo || '',
       p?.nombre || '',
@@ -98,9 +104,9 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo') {
   return filas;
 }
 
-export async function descargarCorteBardas(bardas, permisos, filtro = 'todo') {
+export async function descargarCorteBardas(bardas, permisos, filtro = 'todo', calidad = []) {
   const XLSX = await import('xlsx');
-  const hoja = XLSX.utils.aoa_to_sheet([ENCABEZADOS, ...filasDeCorte(bardas, permisos, filtro)]);
+  const hoja = XLSX.utils.aoa_to_sheet([ENCABEZADOS, ...filasDeCorte(bardas, permisos, filtro, calidad)]);
   hoja['!cols'] = ANCHOS.map((wch) => ({ wch }));
   hoja['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: ENCABEZADOS.length - 1 } }) };
   hoja['!freeze'] = { xSplit: 0, ySplit: 1 };
