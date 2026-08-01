@@ -82,7 +82,14 @@ para brigadistas, registro de material repartido.
   subirse al bucket público `bardas-fotos-nuevas` de Supabase Storage. La fila
   va a la tabla `bardas_nuevas` (id lo genera el celular) y al cargar la vista
   se mezcla con el catálogo del Excel (aBardaCatalogo en Bardas.jsx), así que
-  sale igual en el mapa, la búsqueda y el cálculo de rutas. En vez de GPS
+  sale igual en el mapa, la búsqueda y el cálculo de rutas. Esas SÍ se pueden
+  corregir y quitar desde la ficha (botones Editar / Eliminar, este último con
+  doble confirmación); las del Excel no, porque viven en un archivo del sitio
+  y no en la nube — de ahí la bandera `agregadaEnApp`. Quitar no borra la
+  fila: marca `borrado` (igual que `anulado` en bardas_permisos) y la consulta
+  filtra por él. Al reemplazar la foto se sube con `x-upsert` sobre la
+  anterior y la URL lleva `?v=<hora>` para que el celular no siga enseñando la
+  vieja de su caché. En vez de GPS
   también se puede pegar un link de Google Maps (como los del Excel): un link
   LARGO ya trae las coordenadas y se leen directo en el navegador
   (src/lib/mapsLink.js); uno CORTO (maps.app.goo.gl) hay que resolverlo del

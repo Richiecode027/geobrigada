@@ -25,6 +25,8 @@ import {
   anularPermisoBarda,
   cargarBardasNuevas,
   guardarBardaNueva,
+  actualizarBardaNueva,
+  borrarBardaNueva,
   subirFotoBardaNueva,
   cargarReservasBardas,
   apartarBarda,
@@ -43,7 +45,10 @@ function aBardaCatalogo(n) {
     lat: n.lat,
     lng: n.lng,
     foto: n.foto,
-    referencia: null
+    referencia: null,
+    // Las del Excel no se pueden tocar desde el teléfono (viven en un archivo
+    // del sitio); estas sí, porque están en la nube.
+    agregadaEnApp: true
   };
 }
 
@@ -196,6 +201,8 @@ export default function Bardas() {
   const [linkNueva, setLinkNueva] = useState('');
   const [resolviendoLink, setResolviendoLink] = useState(false);
   const [linkNuevaError, setLinkNuevaError] = useState('');
+  // null = se está dando de alta una barda nueva · id = se está corrigiendo esa
+  const [editandoId, setEditandoId] = useState(null);
 
   // --- carga inicial: catálogo + lo que ya se visitó -----------------------
   useEffect(() => {
@@ -453,6 +460,49 @@ export default function Bardas() {
   function cerrarAgregar() {
     if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
     setAgregando(false);
+    setEditandoId(null);
+  }
+
+  // Corregir una barda que ya se había agregado desde la app: se abre el mismo
+  // formulario, pero con sus datos puestos y sin volver a preguntar la
+  // ubicación (la que trae es la buena, salvo que la cambien a propósito).
+  function abrirEditar(b) {
+    setError('');
+    setRegistrando(null);
+    setEditandoId(b.id);
+    setAgregando(true);
+    setFormNueva({
+      direccion: b.direccion || '',
+      colonia: b.colonia || '',
+      distrito: b.distrito || '',
+      archivo: null,
+      previewUrl: null
+    });
+    setPosNueva(b.lat != null ? [b.lat, b.lng] : null);
+    setGpsNuevaError('');
+    setLinkNueva('');
+    setLinkNuevaError('');
+    setComoSeDedujo('');
+    posDeLinkRef.current = true; // que el GPS no le gane a la ubicación guardada
+    ubicacionResuelta.current = b.lat != null ? [b.lat, b.lng].join(',') : null;
+  }
+
+  async function borrarBarda(b) {
+    if (!window.confirm(`¿Seguro que quieres eliminar la barda "${b.direccion || b.id}"?`)) return;
+    if (!window.confirm('¿De verdad seguro? Va a desaparecer de la lista de todos los equipos.')) return;
+    setGuardando(true);
+    const ok = await borrarBardaNueva(b.id);
+    setGuardando(false);
+    if (!ok) {
+      setError('No se pudo eliminar (¿sin señal?). Intenta de nuevo.');
+      return;
+    }
+    setTodas((t) => t.filter((x) => String(x.id) !== String(b.id)));
+    setRuta((r) => r.filter((x) => String(x.id) !== String(b.id)));
+    await liberarReservasBardas([String(b.id)]);
+    await refrescarReservas();
+    setRegistrando(null);
+    setError('');
   }
 
   // Con la ubicación ya se puede saber casi todo: la colonia sale del catálogo
@@ -461,7 +511,9 @@ export default function Bardas() {
   // vacío: si el equipo ya escribió algo, manda lo que escribió.
   const ubicacionResuelta = useRef(null);
   useEffect(() => {
-    if (!agregando || !posNueva) return;
+    // Al corregir una barda no se autollena: sus datos ya están y sería
+    // pisarlos con una suposición.
+    if (!agregando || !posNueva || editandoId) return;
     const clave = posNueva.join(',');
     if (ubicacionResuelta.current === clave) return;
     ubicacionResuelta.current = clave;
@@ -491,7 +543,7 @@ export default function Bardas() {
     return () => {
       cancelado = true;
     };
-  }, [agregando, posNueva, todas]);
+  }, [agregando, posNueva, todas, editandoId]);
 
   async function usarLink() {
     if (!linkNueva.trim()) return;
@@ -511,35 +563,50 @@ export default function Bardas() {
   async function guardarNueva() {
     if (!posNueva) return;
     setGuardandoNueva(true);
-    const id = idNuevo();
-    let foto = null;
+    const id = editandoId || idNuevo();
+
+    // La foto solo se toca si eligieron una nueva: al corregir la dirección
+    // no hay por qué volver a subir la que ya estaba.
+    let foto;
     if (formNueva.archivo) {
       try {
         const comprimida = await comprimirImagen(formNueva.archivo);
         foto = await subirFotoBardaNueva(id, comprimida);
       } catch {
-        /* si falla la foto, se guarda la barda igual (la ubicación es lo importante) */
+        /* si falla la foto, se guarda igual (la ubicación es lo importante) */
       }
     }
-    const fila = {
-      id,
+
+    const datos = {
       direccion: formNueva.direccion.trim() || null,
       colonia: formNueva.colonia.trim() || null,
       distrito: formNueva.distrito.trim() || null,
       lat: posNueva[0],
-      lng: posNueva[1],
-      foto,
-      equipo: equipo.trim() || null
+      lng: posNueva[1]
     };
-    const ok = await guardarBardaNueva(fila);
+    if (foto !== undefined) datos.foto = foto;
+
+    const ok = editandoId
+      ? await actualizarBardaNueva(id, datos)
+      : await guardarBardaNueva({ ...datos, id, foto: foto ?? null, equipo: equipo.trim() || null });
     setGuardandoNueva(false);
     if (!ok) {
-      setError('No se pudo guardar la barda nueva (¿sin señal?). Intenta de nuevo.');
+      setError(
+        editandoId
+          ? 'No se pudo guardar la corrección (¿sin señal?). Intenta de nuevo.'
+          : 'No se pudo guardar la barda nueva (¿sin señal?). Intenta de nuevo.'
+      );
       return;
     }
-    setTodas((t) => [...t, aBardaCatalogo(fila)]);
+
+    setTodas((t) =>
+      editandoId
+        ? t.map((b) => (String(b.id) === String(id) ? { ...b, ...datos } : b))
+        : [...t, aBardaCatalogo({ ...datos, id, foto: foto ?? null })]
+    );
     if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
     setAgregando(false);
+    setEditandoId(null);
     // Si el intento anterior había fallado, el aviso viejo tiene que irse:
     // si no, queda diciendo "no se pudo guardar" sobre una barda ya guardada.
     setError('');
@@ -710,17 +777,26 @@ export default function Bardas() {
   // Dónde estás y hacia dónde ves. Con brújula sale una flecha que gira con el
   // teléfono (caminando en una colonia desconocida, "hacia dónde voy" importa
   // más que "dónde estoy"); sin brújula, el punto de siempre.
+  //
+  // Va con interactive:false a propósito: si no, al estar parado JUNTO a una
+  // barda —que es lo normal al acabar de registrarla— la flecha tapaba el pin
+  // y los toques se los quedaba ella. Así los dedos pasan de largo hasta la
+  // barda de abajo. Se pierde el globito de "aquí estás tú", que igual no
+  // hacía falta explicar.
   useEffect(() => {
     if (!map || !miPos) return;
     if (capaYo.current) capaYo.current.remove();
     const g = L.layerGroup().addTo(map);
     if (rumbo == null) {
       L.circleMarker(miPos, {
-        radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1
-      }).bindTooltip('Aquí estás tú').addTo(g);
+        radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1,
+        interactive: false
+      }).addTo(g);
     } else {
       L.marker(miPos, {
         zIndexOffset: 1000,
+        interactive: false,
+        keyboard: false,
         icon: L.divIcon({
           className: 'flecha-yo',
           html:
@@ -732,12 +808,24 @@ export default function Bardas() {
           iconSize: [36, 36],
           iconAnchor: [18, 18]
         })
-      })
-        .bindTooltip('Aquí estás tú · la punta es hacia donde ves')
-        .addTo(g);
+      }).addTo(g);
     }
     capaYo.current = g;
   }, [map, miPos, rumbo]);
+
+  // Al abrir, en cuanto llega la primera ubicación el mapa se va ahí. Antes
+  // arrancaba mostrando todo Morelia y había que buscarse a uno mismo entre
+  // cientos de pines. Solo la primera vez: después el brigadista manda, que
+  // para eso mueve el mapa.
+  const yaCentrado = useRef(false);
+  useEffect(() => {
+    if (!map || !miPos || yaCentrado.current) return;
+    yaCentrado.current = true;
+    // Si ya hay ruta, el encuadre de abajo sabe más (mete todas las bardas).
+    if (ruta.length > 0) return;
+    map.invalidateSize({ animate: false });
+    map.setView(miPos, 16, { animate: false });
+  }, [map, miPos, ruta.length]);
 
   // Encuadra al armarse la ruta (una vez por ruta nueva).
   const encuadrado = useRef(0);
@@ -1111,7 +1199,9 @@ export default function Bardas() {
         {/* ---------- AGREGAR UNA BARDA QUE NO ESTÁ EN EL CATÁLOGO ---------- */}
         {!cargando && (
           <>
-            <h3>¿Encontraste una barda que no está en la lista?</h3>
+            <h3>
+              {editandoId ? 'Corregir la barda' : '¿Encontraste una barda que no está en la lista?'}
+            </h3>
             {!agregando ? (
               <div className="fila" style={{ marginTop: 0 }}>
                 <button className="boton suave mini" onClick={abrirAgregar}>
@@ -1120,6 +1210,11 @@ export default function Bardas() {
               </div>
             ) : (
               <div className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1' }}>
+                {editandoId && (
+                  <p className="nota" style={{ marginTop: 0 }}>
+                    Cambia lo que esté mal. Si no eliges foto nueva, se queda la que ya tenía.
+                  </p>
+                )}
                 <label className="etiqueta">Dirección (opcional)</label>
                 <input
                   type="text"
@@ -1221,7 +1316,11 @@ export default function Bardas() {
                     onClick={guardarNueva}
                     disabled={guardandoNueva || !posNueva}
                   >
-                    {guardandoNueva ? 'Guardando…' : '✅ Guardar barda'}
+                    {guardandoNueva
+                      ? 'Guardando…'
+                      : editandoId
+                      ? '✅ Guardar cambios'
+                      : '✅ Guardar barda'}
                   </button>
                   <button className="boton suave mini" onClick={cerrarAgregar}>
                     Cancelar
@@ -1359,6 +1458,23 @@ export default function Bardas() {
               <button className="boton suave mini" onClick={() => comoLlegar(registrando)}>
                 🧭 Cómo llegar
               </button>
+              {/* Solo las que se capturaron desde la app se pueden corregir o
+                  quitar: las del Excel viven en un archivo del sitio, no en la
+                  nube, y desde el teléfono no hay forma de tocarlas. */}
+              {registrando.agregadaEnApp && (
+                <>
+                  <button className="boton suave mini" onClick={() => abrirEditar(registrando)}>
+                    ✏️ Editar
+                  </button>
+                  <button
+                    className="boton peligro mini"
+                    onClick={() => borrarBarda(registrando)}
+                    disabled={guardando}
+                  >
+                    🗑 Eliminar
+                  </button>
+                </>
+              )}
             </div>
 
             {/* El nombre del equipo es lo que aparta la barda: con nombre

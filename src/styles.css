@@ -244,10 +244,13 @@ textarea { resize: vertical; }
 
 /* Flecha de "aquí estás tú": gira con la brújula del teléfono. La transición
    suaviza el giro para que no salte de golpe entre lectura y lectura. */
-.flecha-yo { background: none; border: none; }
+/* pointer-events:none para que la flecha NUNCA se quede con un toque: parado
+   junto a una barda, tapaba el pin y no dejaba abrirlo. */
+.flecha-yo { background: none; border: none; pointer-events: none; }
 .flecha-yo div {
   width: 36px; height: 36px;
   transition: transform 0.15s linear;
+  pointer-events: none;
 }
 
 .flecha-ruta { background: none; border: none; }

@@ -239,6 +239,10 @@ export async function anularPermisoBarda(bardaId) {
 // las da de alta cualquier equipo desde la propia app: encontró una barda que
 // nadie había capturado, le toma foto (opcional) y la sube con su GPS.
 
+// x-upsert deja reemplazar la foto de una barda que ya tenía: al corregirla
+// se sube encima de la anterior, en vez de fallar porque el archivo existe.
+// Se le agrega ?v=<hora> a la URL para que el celular no siga enseñando la
+// foto vieja que traía en su caché.
 export async function subirFotoBardaNueva(id, blob) {
   if (!nubeConfigurada()) return null;
   try {
@@ -247,15 +251,43 @@ export async function subirFotoBardaNueva(id, blob) {
       headers: {
         apikey: SUPABASE_KEY,
         Authorization: 'Bearer ' + SUPABASE_KEY,
-        'Content-Type': 'image/jpeg'
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true'
       },
       body: blob
     });
     if (!res.ok) return null;
-    return `${SUPABASE_URL}/storage/v1/object/public/bardas-fotos-nuevas/${id}.jpg`;
+    return (
+      `${SUPABASE_URL}/storage/v1/object/public/bardas-fotos-nuevas/${id}.jpg` +
+      `?v=${Date.now()}`
+    );
   } catch {
     return null;
   }
+}
+
+// Corrige una barda ya guardada (dirección, colonia, ubicación o foto).
+export async function actualizarBardaNueva(id, cambios) {
+  if (!nubeConfigurada()) return false;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/bardas_nuevas?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { ...cabeceras(), Prefer: 'return=minimal' },
+        body: JSON.stringify(cambios)
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Quitar una barda: no se borra la fila, se marca. Queda el rastro de que
+// existió, igual que con los permisos anulados.
+export async function borrarBardaNueva(id) {
+  return actualizarBardaNueva(id, { borrado: true });
 }
 
 export async function guardarBardaNueva(fila) {
@@ -275,7 +307,7 @@ export async function guardarBardaNueva(fila) {
 export async function cargarBardasNuevas() {
   if (!nubeConfigurada()) return [];
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/bardas_nuevas?select=*&order=creado.desc&limit=1000`,
+    `${SUPABASE_URL}/rest/v1/bardas_nuevas?borrado=is.false&select=*&order=creado.desc&limit=1000`,
     { headers: cabeceras() }
   );
   if (!res.ok) throw new Error('la nube respondió ' + res.status);

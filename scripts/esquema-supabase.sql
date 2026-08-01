@@ -233,6 +233,26 @@ create policy "todos ven que bardas estan apartadas"
   on bardas_reservadas for select to anon using (true);
 
 -- ---------------------------------------------------------------------------
+-- Corregir y quitar bardas agregadas desde el celular (ago 2026): capturando
+-- en la calle se cuela una dirección mal escrita, una foto que salió movida o
+-- una barda repetida. Hacía falta poder editarlas y quitarlas.
+--
+-- Quitar NO borra la fila: la marca como borrada, igual que bardas_permisos
+-- con `anulado`. Así queda el rastro de que existió y de que alguien la quitó,
+-- que en campo vale más que ahorrarse un renglón.
+
+alter table bardas_nuevas add column if not exists borrado boolean not null default false;
+
+create policy "corregir o quitar una barda agregada"
+  on bardas_nuevas for update to anon using (true) with check (true);
+
+-- Para poder reemplazar la foto de una barda ya guardada.
+create policy "reemplazar foto de barda nueva"
+  on storage.objects for update to anon
+  using (bucket_id = 'bardas-fotos-nuevas')
+  with check (bucket_id = 'bardas-fotos-nuevas');
+
+-- ---------------------------------------------------------------------------
 -- Más resultados de visita (jul 2026): "permiso sí/no" no alcanzaba. Ahora
 -- cada visita guarda un ESTADO:
 --   con_permiso  · el dueño dejó pintar
