@@ -54,9 +54,9 @@ const ANCHOS = [6, 8, 34, 22, 9, 3, 40, 24, 22, 14, 20, 14, 30, 18];
 
 // Qué bardas entran en el corte.
 export const FILTROS = [
-  { id: 'todo', etiqueta: 'Todas', descripcion: 'Las del listado, hayan sido visitadas o no.' },
-  { id: 'visitadas', etiqueta: 'Solo visitadas', descripcion: 'Únicamente las que ya tienen un resultado registrado.' },
-  { id: 'con_permiso', etiqueta: 'Solo con permiso', descripcion: 'Únicamente las que sí dejaron pintar.' }
+  { id: 'todo', etiqueta: 'Todas' },
+  { id: 'visitadas', etiqueta: 'Solo visitadas' },
+  { id: 'con_permiso', etiqueta: 'Solo con permiso' }
 ];
 
 function pasaElFiltro(estado, filtro) {

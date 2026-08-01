@@ -36,7 +36,8 @@ export default function App() {
   // quedó en curso (ver guardarRutaActiva en Brigadista.jsx).
   const paramsLink = leerParametros();
   const params = paramsLink || cargarRutaActiva();
-  const [tab, setTab] = useState('coordinador');
+  // Bardas es la actividad fuerte del momento: la app abre ahí, no en Planear.
+  const [tab, setTab] = useState('bardas');
   // Contexto que la vista Brigadas pasa a Planear al tocar "Planear ▸" en una
   // colonia: lleva la colonia y las etiquetas (campaña, actividad, brigada).
   const [contextoPlanear, setContextoPlanear] = useState(null);

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
+import AsaPanel from '../components/AsaPanel.jsx';
 import { iniciarGPS, obtenerPosicionActual } from '../lib/gps.js';
 import { registrarAtras } from '../lib/atras.js';
 import { comprimirImagen } from '../lib/imagen.js';
@@ -46,6 +47,7 @@ function aBardaCatalogo(n) {
     lng: n.lng,
     foto: n.foto,
     referencia: null,
+    creado: n.creado,
     // Las del Excel no se pueden tocar desde el teléfono (viven en un archivo
     // del sitio); estas sí, porque están en la nube.
     agregadaEnApp: true
@@ -258,8 +260,7 @@ export default function Bardas() {
     }
   }
 
-  // Solo los registros que de verdad cierran la barda: uno "visitado" de ayer
-  // ya no cuenta (esa barda volvió a la lista de pendientes hoy).
+  // Solo los registros vigentes (no anulados) cierran la barda.
   const permisosVigentes = useMemo(() => permisos.filter(bardaAtendida), [permisos]);
   const pendientes = useMemo(() => bardasPendientes(todas, permisos), [todas, permisos]);
   const porEstado = useMemo(() => {
@@ -270,6 +271,47 @@ export default function Bardas() {
     }
     return cuenta;
   }, [permisosVigentes]);
+
+  // Nombre legible para las bardas agregadas desde la app: nunca el id crudo
+  // (un uuid no le dice nada a nadie). Si falta la dirección, se usa la
+  // colonia; si dos bardas nuevas caen en la misma calle —muy común, OSM
+  // repite el mismo nombre en tramos largos— se numeran para distinguirlas,
+  // en el orden en que se capturaron.
+  const nombresBardasNuevas = useMemo(() => {
+    const nuevas = todas
+      .filter((b) => b.agregadaEnApp)
+      .slice()
+      .sort((a, b) => String(a.creado || '').localeCompare(String(b.creado || '')));
+
+    const base = new Map();
+    for (const b of nuevas) {
+      const nombre =
+        (b.direccion && b.direccion.trim()) ||
+        (b.colonia ? `Barda en ${b.colonia}` : 'Barda sin dirección');
+      base.set(b.id, nombre);
+    }
+    const cuenta = new Map();
+    for (const nombre of base.values()) cuenta.set(nombre, (cuenta.get(nombre) || 0) + 1);
+
+    const contador = new Map();
+    const resultado = new Map();
+    for (const b of nuevas) {
+      const nombre = base.get(b.id);
+      if (cuenta.get(nombre) > 1) {
+        const n = (contador.get(nombre) || 0) + 1;
+        contador.set(nombre, n);
+        resultado.set(b.id, `${nombre} ${n}`);
+      } else {
+        resultado.set(b.id, nombre);
+      }
+    }
+    return resultado;
+  }, [todas]);
+
+  function nombreBarda(b) {
+    if (b.agregadaEnApp) return nombresBardasNuevas.get(b.id) || 'Barda sin dirección';
+    return b.direccion || 'Barda ' + b.id;
+  }
 
   // Bardas apartadas por OTRO equipo (las propias van aparte, más abajo).
   const reservasAjenas = useMemo(() => {
@@ -384,14 +426,28 @@ export default function Bardas() {
   // Soltar la barda que se está viendo, de un toque. Se puede hacer también
   // borrando el nombre del equipo y guardando, pero eso obliga a pelearse con
   // el teclado en plena calle.
-  async function soltarEsta() {
+  // Apartar / quitar apartado: acción de un toque junto a "Cómo llegar", sin
+  // pasar por el formulario de abajo (que ya solo registra el resultado de
+  // la visita). Deshabilitado si no hay equipo escrito: no hay a nombre de
+  // quién apartarla.
+  async function alternarApartado() {
     if (!registrando) return;
+    const miEquipo = equipo.trim();
+    if (!miEquipo) return;
+    const id = String(registrando.id);
+    const esMia = registrando.apartadaPor === miEquipo;
     setGuardando(true);
-    await liberarReservasBardas([String(registrando.id)]);
+    const ok = esMia ? ((await liberarReservasBardas([id])), true) : await apartarBarda(id, miEquipo);
     await refrescarReservas();
     setGuardando(false);
-    setRuta((r) => r.filter((b) => String(b.id) !== String(registrando.id)));
-    setRegistrando(null);
+    if (!ok) {
+      setError('No se pudo guardar el apartado (¿sin señal?). Intenta de nuevo.');
+      return;
+    }
+    const nuevoApartador = esMia ? null : miEquipo;
+    setRegistrando((r) => (r ? { ...r, apartadaPor: nuevoApartador } : r));
+    setForm((f) => ({ ...f, equipo: nuevoApartador || '' }));
+    if (esMia) setRuta((r) => r.filter((b) => String(b.id) !== id));
     setError('');
   }
 
@@ -489,7 +545,7 @@ export default function Bardas() {
   }
 
   async function borrarBarda(b) {
-    if (!window.confirm(`¿Seguro que quieres eliminar la barda "${b.direccion || b.id}"?`)) return;
+    if (!window.confirm(`¿Seguro que quieres eliminar la barda "${nombreBarda(b)}"?`)) return;
     if (!window.confirm('¿De verdad seguro? Va a desaparecer de la lista de todos los equipos.')) return;
     setGuardando(true);
     const ok = await borrarBardaNueva(b.id);
@@ -691,7 +747,7 @@ export default function Bardas() {
       }
       pinBarda([b.lat, b.lng], texto, color, colorTexto)
         .bindTooltip(
-          `<strong>${b.direccion || 'Barda ' + b.id}</strong><br>${b.colonia || ''}` +
+          `<strong>${nombreBarda(b)}</strong><br>${b.colonia || ''}` +
             (info
               ? `<br>${info.etiqueta}${visita.equipo ? ` · ${visita.equipo}` : ''}`
               : miaApartada
@@ -869,6 +925,18 @@ export default function Bardas() {
     return () => clearTimeout(tid);
   }, [registrando]);
 
+  // Mismo truco para el formulario de agregar/corregir barda: el botón que lo
+  // abre ahora vive arriba, lejos de donde aparece el formulario.
+  const formNuevaRef = useRef(null);
+  useEffect(() => {
+    if (!agregando) return;
+    setPanelPlegado(false);
+    const tid = setTimeout(() => {
+      formNuevaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => clearTimeout(tid);
+  }, [agregando]);
+
   // --- registrar el resultado de la visita ----------------------------------
   function abrirRegistro(b) {
     const previo = permisosVigentes.find((p) => String(p.barda_id) === String(b.id));
@@ -904,30 +972,11 @@ export default function Bardas() {
   //     equipo, sin vencimiento.
   //   · sin resultado y sin nombre -> se suelta y vuelve a estar libre.
   async function guardar() {
-    if (!registrando) return;
+    if (!registrando || !form.estado) return;
     const id = String(registrando.id);
     const nombreEquipo = form.equipo.trim();
     setGuardando(true);
 
-    // --- solo apartar o soltar (todavía no se visita) ---
-    if (!form.estado) {
-      const ok = nombreEquipo
-        ? await apartarBarda(id, nombreEquipo)
-        : ((await liberarReservasBardas([id])), true);
-      setGuardando(false);
-      if (!ok) {
-        setError('No se pudo apartar en la nube (¿sin señal?). Intenta de nuevo.');
-        return;
-      }
-      await refrescarReservas();
-      // Si la soltó, sale de la ruta que trae armada.
-      if (!nombreEquipo) setRuta((r) => r.filter((b) => String(b.id) !== id));
-      setRegistrando(null);
-      setError('');
-      return;
-    }
-
-    // --- registrar el resultado de la visita ---
     const fila = {
       barda_id: id,
       estado: form.estado,
@@ -1007,15 +1056,7 @@ export default function Bardas() {
     <div className="contenido">
       <div className="mapa" ref={mapaRef} />
       <div className={'panel' + (panelPlegado ? ' plegado' : '')}>
-        {/* Asa (solo en el teléfono): pliega el panel para ver el mapa grande */}
-        <button
-          type="button"
-          className="asa-panel"
-          onClick={() => setPanelPlegado(!panelPlegado)}
-        >
-          <span className="asa-barrita" />
-          {panelPlegado ? '▲ Mostrar panel' : '▼ Ocultar panel'}
-        </button>
+        <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} />
         <h2>Bardas por pedir permiso</h2>
 
         {cargando && <p>Cargando bardas…</p>}
@@ -1050,10 +1091,14 @@ export default function Bardas() {
             >
               {verDistritos ? '🗺️ Ocultar distritos' : '🗺️ Ver distritos'}
             </button>
+            {!agregando && (
+              <button className="boton suave mini" onClick={abrirAgregar}>
+                ➕ Agregar barda
+              </button>
+            )}
           </div>
         )}
 
-        {/* ---------- ANTES DE EMPEZAR ---------- */}
         {/* ---------- RETOMAR UN RECORRIDO QUE SE QUEDÓ A MEDIAS ---------- */}
         {!cargando && sesionPrevia && (
           <div className="tarjeta-equipo" style={{ borderLeftColor: '#e8a33d' }}>
@@ -1062,10 +1107,6 @@ export default function Bardas() {
               {sesionPrevia.equipo ? sesionPrevia.equipo + ' · ' : ''}
               {sesionPrevia.ruta.length} bardas
             </div>
-            <p className="nota" style={{ marginTop: 6 }}>
-              Se retoma en el mismo orden que traías. Tus bardas siguen apartadas
-              de cualquier forma: eso ya no depende de esta pantalla.
-            </p>
             <div className="fila" style={{ marginTop: 8 }}>
               <button className="boton primario" onClick={retomarRecorrido}>
                 ▶ Retomar recorrido
@@ -1087,17 +1128,8 @@ export default function Bardas() {
               onChange={(e) => setEquipo(e.target.value)}
             />
 
-            {!equipo.trim() ? (
-              <p className="nota" style={{ marginTop: 6 }}>
-                Escribe el nombre de tu equipo para poder apartar bardas. Es el
-                mismo nombre con el que quedan guardadas.
-              </p>
-            ) : misApartadas.length === 0 ? (
-              <div className="aviso">
-                Todavía no traes bardas apartadas. Toca las que quieras hacer —en
-                el mapa o buscándolas— y guárdalas con el nombre de tu equipo.
-                Quedan apartadas aunque cierres la app.
-              </div>
+            {!equipo.trim() ? null : misApartadas.length === 0 ? (
+              <div className="aviso">Aún no traes bardas apartadas.</div>
             ) : (
               <>
                 <div className="aviso" style={{ background: '#eef4fc', borderColor: '#c3d8f0' }}>
@@ -1108,7 +1140,7 @@ export default function Bardas() {
                   {misApartadas.map((b) => (
                     <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
                       <span>
-                        {b.direccion || 'Barda ' + b.id}
+                        {nombreBarda(b)}
                         {b.foto ? ' 📷' : ''}
                         <br />
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>{b.colonia}</span>
@@ -1124,9 +1156,6 @@ export default function Bardas() {
                     Soltar todas
                   </button>
                 </div>
-                <p className="nota" style={{ marginTop: 4 }}>
-                  Se ordenan de la forma más corta para caminarlas, desde donde estés.
-                </p>
               </>
             )}
 
@@ -1152,11 +1181,11 @@ export default function Bardas() {
                 <h3>
                   Tu ruta de hoy ({ruta.length} bardas · {metrosBonito(largoDeRuta(ruta))})
                 </h3>
-                <p className="nota" style={{ marginTop: 0 }}>
-                  {porCalles
-                    ? 'Distancias y trazo por calles reales. Se eligió la zona con más bardas juntas cerca de ti.'
-                    : 'No se pudieron bajar las calles (¿sin señal?): el orden y las distancias son en línea recta.'}
-                </p>
+                {!porCalles && (
+                  <p className="nota" style={{ marginTop: 0 }}>
+                    Sin señal para bajar las calles: el orden y las distancias son en línea recta.
+                  </p>
+                )}
                 {/* Si no hay bardas cerca, el primer tramo es largo: mejor
                     decirlo de frente que dejar al equipo descubrirlo caminando. */}
                 {ruta[0] && ruta[0].metrosDesdeAnterior > 1200 && (
@@ -1171,7 +1200,7 @@ export default function Bardas() {
                   {ruta.map((b, i) => (
                     <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
                       <span>
-                        <strong>{i + 1}.</strong> {b.direccion || 'Barda ' + b.id}
+                        <strong>{i + 1}.</strong> {nombreBarda(b)}
                         {b.foto ? ' 📷' : ''}
                         <br />
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>
@@ -1212,23 +1241,14 @@ export default function Bardas() {
           </>
         )}
 
-        {/* ---------- AGREGAR UNA BARDA QUE NO ESTÁ EN EL CATÁLOGO ---------- */}
-        {!cargando && (
+        {/* ---------- AGREGAR / CORREGIR UNA BARDA ---------- */}
+        {!cargando && agregando && (
           <>
-            <h3>
-              {editandoId ? 'Corregir la barda' : '¿Encontraste una barda que no está en la lista?'}
-            </h3>
-            {!agregando ? (
-              <div className="fila" style={{ marginTop: 0 }}>
-                <button className="boton suave mini" onClick={abrirAgregar}>
-                  ➕ Agregar barda nueva
-                </button>
-              </div>
-            ) : (
-              <div className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1' }}>
+            <h3>{editandoId ? 'Corregir la barda' : 'Barda nueva'}</h3>
+            <div ref={formNuevaRef} className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1' }}>
                 {editandoId && (
                   <p className="nota" style={{ marginTop: 0 }}>
-                    Cambia lo que esté mal. Si no eliges foto nueva, se queda la que ya tenía.
+                    Si no eliges foto nueva, se queda la que ya tenía.
                   </p>
                 )}
                 <label className="etiqueta">Dirección (opcional)</label>
@@ -1342,8 +1362,7 @@ export default function Bardas() {
                     Cancelar
                   </button>
                 </div>
-              </div>
-            )}
+            </div>
           </>
         )}
 
@@ -1351,9 +1370,6 @@ export default function Bardas() {
         {!cargando && (
           <>
             <h3>Buscar una barda</h3>
-            <p className="nota" style={{ marginTop: 0 }}>
-              Para apartarla, registrarla o corregirla, aunque no esté en tu ruta.
-            </p>
             <input
               type="text"
               autoComplete="off"
@@ -1364,7 +1380,7 @@ export default function Bardas() {
               const est = estadoDe(b);
               return (
                 <div key={b.id} className="resultado" onClick={() => abrirRegistro(b)}>
-                  <strong>{b.direccion || 'Barda ' + b.id}</strong>
+                  <strong>{nombreBarda(b)}</strong>
                   {b.foto ? ' 📷' : ''}
                   <div style={{ fontSize: '0.8rem', color: '#666' }}>
                     {b.colonia}
@@ -1388,9 +1404,6 @@ export default function Bardas() {
         {!cargando && (
           <>
             <h3>Corte</h3>
-            <p className="nota" style={{ marginTop: 0 }}>
-              Baja un Excel con en qué quedó cada barda y qué equipo la hizo.
-            </p>
             <label className="etiqueta">¿Qué bardas incluir?</label>
             <div className="fila" style={{ flexWrap: 'wrap' }}>
               {FILTROS_CORTE.map((f) => (
@@ -1403,9 +1416,6 @@ export default function Bardas() {
                 </button>
               ))}
             </div>
-            <p className="nota" style={{ marginTop: 4 }}>
-              {FILTROS_CORTE.find((f) => f.id === filtroCorte)?.descripcion}
-            </p>
             <div className="fila">
               <button className="boton suave mini" onClick={exportarCorte} disabled={exportando}>
                 {exportando ? 'Armando el Excel…' : '📄 Exportar corte a Excel'}
@@ -1421,7 +1431,7 @@ export default function Bardas() {
             className="tarjeta-equipo"
             style={{ borderLeftColor: '#1d6fd1', marginTop: 12 }}
           >
-            <strong>{registrando.direccion || 'Barda ' + registrando.id}</strong>
+            <strong>{nombreBarda(registrando)}</strong>
             <div className="datos">{registrando.colonia}</div>
 
             {registrando.previo && (
@@ -1443,14 +1453,7 @@ export default function Bardas() {
                 }
               >
                 📌 Apartada por <strong>{registrando.apartadaPor}</strong>
-                {registrando.apartadaPor === equipo.trim()
-                  ? ' (tu equipo).'
-                  : '. Si la tomas tú, cambia el nombre de abajo por el tuyo y guarda.'}
-                <div className="fila" style={{ marginTop: 8 }}>
-                  <button className="boton suave mini" onClick={soltarEsta} disabled={guardando}>
-                    🔓 Quitar el apartado
-                  </button>
-                </div>
+                {registrando.apartadaPor === equipo.trim() ? ' (tu equipo).' : '.'}
               </div>
             )}
 
@@ -1474,6 +1477,19 @@ export default function Bardas() {
               <button className="boton suave mini" onClick={() => comoLlegar(registrando)}>
                 🧭 Cómo llegar
               </button>
+              {!registrando.previo && (
+                <button
+                  className="boton suave mini"
+                  onClick={alternarApartado}
+                  disabled={guardando || !equipo.trim()}
+                >
+                  {!equipo.trim()
+                    ? 'Escribe tu equipo arriba para apartar'
+                    : registrando.apartadaPor === equipo.trim()
+                    ? '🔓 Quitar apartado'
+                    : '📌 Apartar para ' + equipo.trim()}
+                </button>
+              )}
               {/* Solo las que se capturaron desde la app se pueden corregir o
                   quitar: las del Excel viven en un archivo del sitio, no en la
                   nube, y desde el teléfono no hay forma de tocarlas. */}
@@ -1493,23 +1509,15 @@ export default function Bardas() {
               )}
             </div>
 
-            {/* El nombre del equipo es lo que aparta la barda: con nombre
-                queda apartada, sin nombre queda libre. Va arriba de todo
-                porque en la mayoría de los casos es lo único que se toca. */}
-            <label className="etiqueta">Equipo que la aparta / la hizo</label>
+            <label className="etiqueta">Equipo</label>
             <input
               type="text"
               autoComplete="off"
-              placeholder="Nombre del equipo (vacío = libre)"
               value={form.equipo}
               onChange={(e) => setForm((f) => ({ ...f, equipo: e.target.value }))}
             />
 
             <h3>¿Ya la hiciste?</h3>
-            <p className="nota" style={{ marginTop: 0 }}>
-              Si todavía no vas, deja esto sin marcar y guarda: la barda queda
-              apartada para tu equipo hasta que la registres.
-            </p>
             <div className="fila" style={{ flexWrap: 'wrap' }}>
               {ESTADOS.map((e) => (
                 <button
@@ -1526,12 +1534,6 @@ export default function Bardas() {
                 </button>
               ))}
             </div>
-            {form.estado === 'visitado' && (
-              <p className="nota" style={{ marginTop: 4 }}>
-                Sale de la ruta de hoy, pero vuelve a la lista de pendientes mañana:
-                a esta barda todavía no se le ha preguntado a nadie.
-              </p>
-            )}
 
             <label className="etiqueta">Nombre de quien atendió</label>
             <input
@@ -1569,26 +1571,13 @@ export default function Bardas() {
             />
 
             <div className="fila" style={{ marginTop: 10 }}>
-              <button className="boton primario" onClick={guardar} disabled={guardando}>
-                {guardando
-                  ? 'Guardando…'
-                  : form.estado
-                  ? 'Guardar el resultado'
-                  : form.equipo.trim()
-                  ? '📌 Apartar para ' + form.equipo.trim()
-                  : 'Dejarla libre'}
+              <button className="boton primario" onClick={guardar} disabled={guardando || !form.estado}>
+                {guardando ? 'Guardando…' : 'Guardar el resultado'}
               </button>
               <button className="boton suave" onClick={() => setRegistrando(null)}>
                 Cancelar
               </button>
             </div>
-            <p className="nota" style={{ marginTop: 6 }}>
-              {form.estado
-                ? 'Queda registrada y se suelta: ya nadie tiene que volver.'
-                : form.equipo.trim()
-                ? 'Queda apartada para ese equipo, aunque cierres la app o se acabe la pila. Nadie más la va a tomar.'
-                : 'Sin nombre de equipo, la barda queda libre para cualquiera.'}
-            </p>
             {registrando.previo && (
               <div className="fila" style={{ marginTop: 4 }}>
                 <button

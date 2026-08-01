@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin } from '../components/useMap.js';
+import AsaPanel from '../components/AsaPanel.jsx';
 import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
@@ -397,15 +398,7 @@ export default function Coordinador({ contexto }) {
     <div className={'contenido' + (busquedaActiva ? ' busqueda-activa' : '')}>
       <div className="mapa" ref={mapaRef} />
       <div className={'panel' + (panelPlegado ? ' plegado' : '')}>
-        {/* Asa (solo en el teléfono): pliega el panel para ver el mapa grande */}
-        <button
-          type="button"
-          className="asa-panel"
-          onClick={() => setPanelPlegado(!panelPlegado)}
-        >
-          <span className="asa-barrita" />
-          {panelPlegado ? '▲ Mostrar panel' : '▼ Ocultar panel'}
-        </button>
+        <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} />
         <h2>1. Busca la colonia</h2>
         <form onSubmit={buscar} className="fila">
           <input

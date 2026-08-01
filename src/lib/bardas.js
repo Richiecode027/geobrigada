@@ -21,31 +21,16 @@ export async function cargarBardas() {
   return catalogo;
 }
 
-const mismoDia = (iso) => {
-  if (!iso) return false;
-  const d = new Date(iso);
-  const hoy = new Date();
-  return (
-    d.getFullYear() === hoy.getFullYear() &&
-    d.getMonth() === hoy.getMonth() &&
-    d.getDate() === hoy.getDate()
-  );
-};
-
 // ¿Este registro saca la barda de la lista de pendientes?
 //
 // - Anulado (se tocó la barda equivocada): no, vuelve a pendientes.
-// - "visitado" quiere decir "fui pero no había nadie": no se le preguntó a
-//   nadie todavía, así que solo sale de la lista de HOY — mañana hay que
-//   volver a pasar.
-// - Los demás resultados (con permiso, sin permiso, no habitado) ya cerraron
-//   el asunto: nadie tiene que volver.
+// - Cualquier resultado registrado (con permiso, sin permiso, visitado, no
+//   habitado) cierra la barda: no se vuelve a repetir sola. "Visitado" se
+//   queda así hasta que alguien la reabra y cambie el resultado a mano.
 // - Registros viejos, de antes de que existiera `estado`: se guían por la
 //   columna `permiso` de siempre.
 export function bardaAtendida(p) {
-  if (!p || p.anulado) return false;
-  if (p.estado === 'visitado') return mismoDia(p.actualizado);
-  return true;
+  return Boolean(p && !p.anulado);
 }
 
 const visitadas = (permisos) =>

@@ -89,7 +89,11 @@ para brigadistas, registro de material repartido.
   fila: marca `borrado` (igual que `anulado` en bardas_permisos) y la consulta
   filtra por él. Al reemplazar la foto se sube con `x-upsert` sobre la
   anterior y la URL lleva `?v=<hora>` para que el celular no siga enseñando la
-  vieja de su caché. En vez de GPS
+  vieja de su caché. Su nombre en listas y mapa (nombreBarda en Bardas.jsx)
+  NUNCA es el id crudo (un uuid no dice nada); si falta la dirección se usa
+  la colonia, y si dos bardas nuevas comparten el mismo nombre de calle —muy
+  común, OSM repite el nombre en tramos largos, llegó a pasar 8 veces con la
+  misma calle— se numeran en el orden en que se capturaron. En vez de GPS
   también se puede pegar un link de Google Maps (como los del Excel): un link
   LARGO ya trae las coordenadas y se leen directo en el navegador
   (src/lib/mapsLink.js); uno CORTO (maps.app.goo.gl) hay que resolverlo del
@@ -118,13 +122,18 @@ para brigadistas, registro de material repartido.
   conservar el ORDEN: "Retomar recorrido" no vuelve a apartar nada porque las bardas
   nunca se soltaron. Ojo: el nombre del equipo se guarda siempre, porque de
   ahí depende que la app distinga sus bardas (pin azul 📌) de las de otro
-  equipo (pin naranja 🔒).
+  equipo (pin naranja 🔒). En la ficha, el botón "📌 Apartar para X" / "🔓
+  Quitar apartado" (junto a "Cómo llegar") lo hace de un toque, sin pasar por
+  el formulario de abajo — ese ya solo registra el resultado de la visita. Si
+  "Tu equipo" está vacío el botón se deshabilita con su propio aviso: no hay
+  a nombre de quién apartar.
 - Cada visita guarda un ESTADO en `bardas_permisos.estado` (la columna vieja
   `permiso` se sigue llenando para el Excel y los scripts): `con_permiso`,
   `sin_permiso`, `visitado` (fue pero no había nadie) y `no_habitado` (casa
-  sola). Los tres últimos cierran la barda para siempre EXCEPTO `visitado`,
-  que solo sale de la ruta del día y vuelve a pendientes al siguiente — a esa
-  barda nunca se le preguntó a nadie (ver bardaAtendida en src/lib/bardas.js).
+  sola). Los cuatro cierran la barda (ver bardaAtendida en src/lib/bardas.js):
+  antes `visitado` volvía sola a pendientes al día siguiente, pero eso
+  confundía al equipo cuando la veía "perdida" — ahora se queda así hasta que
+  alguien la reabra y cambie el resultado a mano.
 - Corte para la oficina: botón "Exportar corte a Excel" en la vista Bardas
   (src/lib/corteBardas.js), con filtro Todas / Solo visitadas / Solo con
   permiso. Sigue el reporte que ya se usa (NO./BRIGADA/DIRECCION/COLONIA/
@@ -167,7 +176,20 @@ para brigadistas, registro de material repartido.
   abusiva). El puntito es una flecha que gira con la brújula
   (src/lib/brujula.js: webkitCompassHeading en iOS, deviceorientationabsolute
   en Android, descontando el giro de pantalla); si el aparato no tiene
-  brújula, se dibuja el punto de antes.
+  brújula, se dibuja el punto de antes. Es un marcador NO interactivo
+  (interactive:false + pointer-events:none en CSS): antes se quedaba con los
+  toques cuando el equipo estaba parado justo junto a una barda recién
+  registrada —el caso más común— y no dejaba abrirla.
+- App abre en la pestaña Bardas (App.jsx), no en Planear: es la actividad del
+  momento. El mapa además se centra solo en la ubicación del equipo en cuanto
+  llega la primera lectura de GPS (una vez, no vuelve a moverlo solo después):
+  antes arrancaba mostrando todo Morelia y había que buscarse entre cientos
+  de pines.
+- El asa para plegar/desplegar el panel en el teléfono (src/components/
+  AsaPanel.jsx, usada en Bardas y Coordinador) es solo la barrita, sin texto,
+  y se puede arrastrar además de tocar: hacia abajo pliega, hacia arriba
+  despliega, como el tirador de una hoja a media pantalla en cualquier app
+  nativa.
 - El equipo se puede editar AL registrar cada barda, no solo en la pantalla de
   inicio: sirve para capturar las que otro equipo hizo a mano. Al reabrir una
   barda ya registrada se respeta el equipo original en vez de reasignarla.
