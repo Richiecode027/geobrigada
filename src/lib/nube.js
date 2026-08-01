@@ -239,14 +239,16 @@ export async function anularPermisoBarda(bardaId) {
 // las da de alta cualquier equipo desde la propia app: encontró una barda que
 // nadie había capturado, le toma foto (opcional) y la sube con su GPS.
 
-// x-upsert deja reemplazar la foto de una barda que ya tenía: al corregirla
-// se sube encima de la anterior, en vez de fallar porque el archivo existe.
-// Se le agrega ?v=<hora> a la URL para que el celular no siga enseñando la
-// foto vieja que traía en su caché.
-export async function subirFotoBardaNueva(id, blob) {
+// `nombreArchivo` (sin extensión) identifica al archivo dentro del bucket —
+// para poder guardar VARIAS fotos por barda, cada una necesita su propio
+// nombre (antes era siempre "<id>.jpg", bueno solo para una). x-upsert deja
+// reemplazar un archivo si ese nombre ya existía, en vez de fallar. Se le
+// agrega ?v=<hora> a la URL para que el celular no siga enseñando una copia
+// vieja que traía en su caché.
+export async function subirFotoBardaNueva(nombreArchivo, blob) {
   if (!nubeConfigurada()) return null;
   try {
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bardas-fotos-nuevas/${id}.jpg`, {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bardas-fotos-nuevas/${nombreArchivo}.jpg`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_KEY,
@@ -258,7 +260,7 @@ export async function subirFotoBardaNueva(id, blob) {
     });
     if (!res.ok) return null;
     return (
-      `${SUPABASE_URL}/storage/v1/object/public/bardas-fotos-nuevas/${id}.jpg` +
+      `${SUPABASE_URL}/storage/v1/object/public/bardas-fotos-nuevas/${nombreArchivo}.jpg` +
       `?v=${Date.now()}`
     );
   } catch {
@@ -312,6 +314,38 @@ export async function cargarBardasNuevas() {
   );
   if (!res.ok) throw new Error('la nube respondió ' + res.status);
   return res.json();
+}
+
+// ---------- ¿es buena barda? (ago 2026) --------------------------------------
+// Independiente de si ya se le preguntó al dueño: sirve para decidir por
+// dónde empezar. Aplica a cualquier barda, del Excel o agregada desde la app.
+
+export async function cargarCalidadBardas() {
+  if (!nubeConfigurada()) return [];
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_calidad?select=*`, {
+    headers: cabeceras()
+  });
+  if (!res.ok) throw new Error('la nube respondió ' + res.status);
+  return res.json();
+}
+
+export async function marcarCalidadBarda(bardaId, buena, equipo) {
+  if (!nubeConfigurada()) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_calidad`, {
+      method: 'POST',
+      headers: { ...cabeceras(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        barda_id: String(bardaId),
+        buena,
+        equipo: equipo || null,
+        actualizado: new Date().toISOString()
+      })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 // ---------- reservas de bardas (jul 2026) ------------------------------------

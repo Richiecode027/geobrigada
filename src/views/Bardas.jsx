@@ -9,6 +9,7 @@ import { coordsDeLinkMaps } from '../lib/mapsLink.js';
 import { ubicacionAproximada } from '../lib/ubicacion.js';
 import { seguirBrujula, pedirPermisoBrujula } from '../lib/brujula.js';
 import { cargarDistritos, COLOR_DISTRITO } from '../lib/distritos.js';
+import { buscarColonias, ringsPorClave, coloniaEnPunto } from '../lib/colonias.js';
 // Solo las etiquetas y la función: la librería pesada (xlsx) se carga dentro
 // de descargarCorteBardas, hasta que alguien toca el botón.
 import { FILTROS as FILTROS_CORTE, descargarCorteBardas } from '../lib/corteBardas.js';
@@ -31,7 +32,9 @@ import {
   subirFotoBardaNueva,
   cargarReservasBardas,
   apartarBarda,
-  liberarReservasBardas
+  liberarReservasBardas,
+  cargarCalidadBardas,
+  marcarCalidadBarda
 } from '../lib/nube.js';
 
 // Una fila de bardas_nuevas (la sube el equipo desde la app) al mismo formato
@@ -46,6 +49,10 @@ function aBardaCatalogo(n) {
     lat: n.lat,
     lng: n.lng,
     foto: n.foto,
+    // Las filas viejas solo traían "foto" (una sola); "fotos" es el arreglo
+    // nuevo. Si viene vacío se usa "foto" como respaldo para no perder las
+    // ~110 que ya estaban así.
+    fotos: Array.isArray(n.fotos) && n.fotos.length ? n.fotos : n.foto ? [n.foto] : [],
     referencia: null,
     creado: n.creado,
     // Las del Excel no se pueden tocar desde el teléfono (viven en un archivo
@@ -115,6 +122,13 @@ function borrarSesion() {
 // las de bardas agregadas desde la app son URLs completas de Supabase Storage.
 const urlFoto = (foto) => (/^https?:/.test(foto) ? foto : import.meta.env.BASE_URL + foto);
 
+// Todas las fotos de una barda, sin importar si viene del catálogo (siempre
+// "foto", una sola) o de una barda agregada desde la app (puede traer varias
+// en "fotos"; "foto" se conserva ahí solo como respaldo de las que ya
+// existían antes de que se pudieran subir varias).
+const fotosDeBarda = (b) =>
+  Array.isArray(b.fotos) && b.fotos.length ? b.fotos : b.foto ? [b.foto] : [];
+
 function metrosBonito(m) {
   return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
 }
@@ -125,14 +139,21 @@ const normalizar = (s) =>
 
 // Pin numerado: verde = con permiso, rojo = sin permiso, azul = en la ruta de
 // hoy (con su número de orden), gris = pendiente pero fuera de la ruta.
-function pinBarda(latlng, texto, color, colorTexto) {
+function pinBarda(latlng, texto, color, colorTexto, buena) {
   // Sobre fondos claros (el amarillo de "casa sola") el blanco de siempre no
   // se lee: por eso cada estado puede pedir su propio color de letra.
   const letra = colorTexto ? `;color:${colorTexto}` : '';
+  // Las marcadas como "buena barda" llevan un anillo dorado alrededor, sin
+  // tapar el color de estado de siempre. El estilo en línea reemplaza el
+  // box-shadow de styles.css (siempre gana sobre la hoja de estilos), así
+  // que aquí se repite la sombra de siempre además del anillo.
+  const anillo = buena
+    ? ';box-shadow:0 0 0 3px #e6b800, 0 1px 4px rgba(0,0,0,0.45)'
+    : '';
   return L.marker(latlng, {
     icon: L.divIcon({
       className: 'pin-barda',
-      html: `<div style="background:${color}${letra}">${texto}</div>`,
+      html: `<div style="background:${color}${letra}${anillo}">${texto}</div>`,
       iconSize: [26, 26],
       iconAnchor: [13, 13]
     })
@@ -146,6 +167,7 @@ export default function Bardas() {
   const capaBardas = useRef(null);
   const capaYo = useRef(null);
   const capaDistritos = useRef(null);
+  const capaColoniaVista = useRef(null);
   const capaLineaDirecta = useRef(null);
   const detenerGPS = useRef(null);
   const yaCalculada = useRef(false);
@@ -153,6 +175,7 @@ export default function Bardas() {
   const [todas, setTodas] = useState([]);
   const [permisos, setPermisos] = useState([]);
   const [reservas, setReservas] = useState([]);
+  const [calidad, setCalidad] = useState([]);
   const [miPos, setMiPos] = useState(null);
   // Grados a los que mira el teléfono (null si no tiene brújula).
   const [rumbo, setRumbo] = useState(null);
@@ -160,6 +183,27 @@ export default function Bardas() {
   // siente pesado en el teléfono, y para caminar no hacen falta. Quien los
   // necesite los prende.
   const [verDistritos, setVerDistritos] = useState(false);
+  // Colonia que se ve en el mapa: al tocar y mantener presionado un punto, o
+  // al elegir un resultado del buscador. Sirve para saber qué calles tocan a
+  // esa colonia sin tener que adivinar por dónde va su límite.
+  const [coloniaVista, setColoniaVista] = useState(null);
+  const [buscandoColonia, setBuscandoColonia] = useState(false);
+  const [textoColonia, setTextoColonia] = useState('');
+  const [resultadosColonia, setResultadosColonia] = useState(null);
+  const [avisoColonia, setAvisoColonia] = useState('');
+
+  // Qué bardas se ven en el mapa según su resultado. 'pendiente' cubre las
+  // que aún no se registran (apartadas o no) — el resto son los 4 ESTADOS.
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [filtrosMapa, setFiltrosMapa] = useState(
+    () => new Set(['pendiente', ...ESTADOS.map((e) => e.id)])
+  );
+  const alternarFiltroMapa = (id) =>
+    setFiltrosMapa((f) => {
+      const n = new Set(f);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [gpsError, setGpsError] = useState('');
@@ -194,8 +238,11 @@ export default function Bardas() {
 
   // Agregar una barda que no está en el catálogo (la encontró el equipo en la calle).
   const [agregando, setAgregando] = useState(false);
+  // fotos: arreglo de { tipo:'existente', url } (ya subidas, al corregir) o
+  // { tipo:'nueva', archivo, previewUrl } (elegidas en este formulario, aún
+  // sin subir). Se pueden agregar varias y quitar una por una.
   const [formNueva, setFormNueva] = useState({
-    direccion: '', colonia: '', distrito: '', archivo: null, previewUrl: null
+    direccion: '', colonia: '', distrito: '', fotos: []
   });
   const [autollenando, setAutollenando] = useState(false);
   const [comoSeDedujo, setComoSeDedujo] = useState('');
@@ -232,6 +279,11 @@ export default function Bardas() {
             setReservas(await cargarReservasBardas());
           } catch {
             /* si falla, simplemente no se ven las apartadas de otros equipos */
+          }
+          try {
+            setCalidad(await cargarCalidadBardas());
+          } catch {
+            /* si falla, simplemente no se ve la estrella de "buena barda" */
           }
         }
         setTodas(todasConNuevas);
@@ -338,6 +390,22 @@ export default function Bardas() {
 
   const apartadaPor = (bardaId) =>
     reservas.find((r) => String(r.barda_id) === String(bardaId))?.equipo || null;
+
+  // Cuáles bardas marcó algún equipo como "se ve buena", para decidir por
+  // dónde empezar. Independiente de si ya se le preguntó al dueño o no.
+  const bardasBuenas = useMemo(
+    () => new Set(calidad.filter((c) => c.buena).map((c) => String(c.barda_id))),
+    [calidad]
+  );
+  const esBuena = (bardaId) => bardasBuenas.has(String(bardaId));
+
+  async function marcarBuena(bardaId, buena) {
+    setCalidad((c) => [
+      ...c.filter((x) => String(x.barda_id) !== String(bardaId)),
+      { barda_id: String(bardaId), buena, equipo: equipo.trim() || null }
+    ]);
+    await marcarCalidadBarda(bardaId, buena, equipo.trim() || null);
+  }
 
   // Guarda la jornada en el teléfono a cada cambio, para poder retomarla si la
   // app se cierra. Mientras haya una sesión previa esperando respuesta no se
@@ -493,10 +561,17 @@ export default function Bardas() {
   // evita que el GPS, al llegar tarde, le gane al link ya elegido a propósito.
   const posDeLinkRef = useRef(false);
 
+  // Libera los blob: URL de las fotos elegidas y aún no subidas, para no
+  // dejar memoria colgada al cerrar o cambiar de formulario.
+  function liberarPreviews(fotos) {
+    for (const f of fotos) if (f.tipo === 'nueva') URL.revokeObjectURL(f.previewUrl);
+  }
+
   function abrirAgregar() {
     setError('');
     setAgregando(true);
-    setFormNueva({ direccion: '', colonia: '', distrito: '', archivo: null, previewUrl: null });
+    liberarPreviews(formNueva.fotos);
+    setFormNueva({ direccion: '', colonia: '', distrito: '', fotos: [] });
     setPosNueva(null);
     setGpsNuevaError('');
     setLinkNueva('');
@@ -516,7 +591,7 @@ export default function Bardas() {
   }
 
   function cerrarAgregar() {
-    if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
+    liberarPreviews(formNueva.fotos);
     setAgregando(false);
     setEditandoId(null);
   }
@@ -529,12 +604,12 @@ export default function Bardas() {
     setRegistrando(null);
     setEditandoId(b.id);
     setAgregando(true);
+    const fotosPrevias = Array.isArray(b.fotos) && b.fotos.length ? b.fotos : b.foto ? [b.foto] : [];
     setFormNueva({
       direccion: b.direccion || '',
       colonia: b.colonia || '',
       distrito: b.distrito || '',
-      archivo: null,
-      previewUrl: null
+      fotos: fotosPrevias.map((url) => ({ tipo: 'existente', url }))
     });
     setPosNueva(b.lat != null ? [b.lat, b.lng] : null);
     setGpsNuevaError('');
@@ -623,30 +698,37 @@ export default function Bardas() {
     setGuardandoNueva(true);
     const id = editandoId || idNuevo();
 
-    // La foto solo se toca si eligieron una nueva: al corregir la dirección
-    // no hay por qué volver a subir la que ya estaba.
-    let foto;
-    if (formNueva.archivo) {
+    // Las que ya estaban subidas (al corregir) se conservan tal cual; las
+    // elegidas en este formulario se comprimen y suben, cada una con su
+    // propio nombre de archivo (antes siempre era "<id>.jpg", bueno solo
+    // para una foto por barda).
+    const existentes = formNueva.fotos.filter((f) => f.tipo === 'existente').map((f) => f.url);
+    const nuevas = formNueva.fotos.filter((f) => f.tipo === 'nueva');
+    const subidas = [];
+    for (let i = 0; i < nuevas.length; i++) {
       try {
-        const comprimida = await comprimirImagen(formNueva.archivo);
-        foto = await subirFotoBardaNueva(id, comprimida);
+        const comprimida = await comprimirImagen(nuevas[i].archivo);
+        const url = await subirFotoBardaNueva(`${id}-${Date.now()}-${i}`, comprimida);
+        if (url) subidas.push(url);
       } catch {
-        /* si falla la foto, se guarda igual (la ubicación es lo importante) */
+        /* si falla una foto, se guardan las demás (la ubicación es lo importante) */
       }
     }
+    const fotos = [...existentes, ...subidas];
 
     const datos = {
       direccion: formNueva.direccion.trim() || null,
       colonia: formNueva.colonia.trim() || null,
       distrito: formNueva.distrito.trim() || null,
       lat: posNueva[0],
-      lng: posNueva[1]
+      lng: posNueva[1],
+      fotos,
+      foto: fotos[0] || null // respaldo para código/reportes viejos que solo leen "foto"
     };
-    if (foto !== undefined) datos.foto = foto;
 
     const ok = editandoId
       ? await actualizarBardaNueva(id, datos)
-      : await guardarBardaNueva({ ...datos, id, foto: foto ?? null, equipo: equipo.trim() || null });
+      : await guardarBardaNueva({ ...datos, id, equipo: equipo.trim() || null });
     setGuardandoNueva(false);
     if (!ok) {
       setError(
@@ -660,9 +742,8 @@ export default function Bardas() {
     setTodas((t) =>
       editandoId
         ? t.map((b) => (String(b.id) === String(id) ? { ...b, ...datos } : b))
-        : [...t, aBardaCatalogo({ ...datos, id, foto: foto ?? null })]
+        : [...t, aBardaCatalogo({ ...datos, id })]
     );
-    if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
     setAgregando(false);
     setEditandoId(null);
     // Si el intento anterior había fallado, el aviso viejo tiene que irse:
@@ -727,6 +808,7 @@ export default function Bardas() {
       const orden = enRuta.get(String(b.id));
       const apartada = reservasAjenas.get(String(b.id));
       const info = visita ? infoEstado(visita) : null;
+      if (!filtrosMapa.has(info ? info.id : 'pendiente')) continue;
       const miaApartada = !visita && !orden && esMia.has(String(b.id));
       let color = '#9aa5b1';
       let texto = '';
@@ -746,9 +828,11 @@ export default function Bardas() {
         color = '#e8a33d';
         texto = '🔒';
       }
-      pinBarda([b.lat, b.lng], texto, color, colorTexto)
+      const buena = esBuena(b.id);
+      pinBarda([b.lat, b.lng], texto, color, colorTexto, buena)
         .bindTooltip(
           `<strong>${nombreBarda(b)}</strong><br>${b.colonia || ''}` +
+            (buena ? '<br>⭐ Se ve buena' : '') +
             (info
               ? `<br>${info.etiqueta}${visita.equipo ? ` · ${visita.equipo}` : ''}`
               : miaApartada
@@ -770,7 +854,7 @@ export default function Bardas() {
       }
     }
     capaBardas.current = g;
-  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles]);
+  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles, bardasBuenas, filtrosMapa]);
 
   // Línea punteada de tu posición a las bardas, solo cuando no se pudieron
   // bajar las calles. Capa aparte y ligera (una polilínea), para que seguir el
@@ -848,6 +932,87 @@ export default function Bardas() {
       vivo = false;
     };
   }, [map, verDistritos]);
+
+  // Ver de qué colonia se trata: mantener presionado un punto del mapa (en
+  // computadora, click derecho — `contextmenu` dispara con los dos gestos sin
+  // código propio de temporizador táctil) busca la colonia que lo contiene.
+  useEffect(() => {
+    if (!map) return;
+    const alPresionar = async (e) => {
+      setAvisoColonia('');
+      const c = await coloniaEnPunto(e.latlng.lat, e.latlng.lng);
+      if (c) {
+        setResultadosColonia(null);
+        setColoniaVista({ nombre: c.n, rings: c.rings });
+      } else {
+        setAvisoColonia('Ahí no hay ninguna colonia del catálogo.');
+      }
+    };
+    map.on('contextmenu', alPresionar);
+    return () => map.off('contextmenu', alPresionar);
+  }, [map]);
+
+  // Dibuja el polígono y el nombre de la colonia que se está viendo.
+  useEffect(() => {
+    if (!map) return;
+    if (capaColoniaVista.current) {
+      capaColoniaVista.current.remove();
+      capaColoniaVista.current = null;
+    }
+    if (!coloniaVista) return;
+    const g = L.layerGroup().addTo(map);
+    coloniaVista.rings.forEach((r) =>
+      L.polygon(r, {
+        color: '#1d3557',
+        weight: 3,
+        fillColor: '#457b9d',
+        fillOpacity: 0.1,
+        interactive: false
+      }).addTo(g)
+    );
+    const mayor = coloniaVista.rings.reduce((a, b) => (b.length > a.length ? b : a), coloniaVista.rings[0]);
+    const centro = L.polygon(mayor).getBounds().getCenter();
+    L.marker(centro, {
+      interactive: false,
+      icon: L.divIcon({
+        className: 'etiqueta-colonia',
+        html: `<div>${coloniaVista.nombre}</div>`,
+        iconSize: [160, 24],
+        iconAnchor: [80, 12]
+      })
+    }).addTo(g);
+    capaColoniaVista.current = g;
+    map.fitBounds(L.polygon(coloniaVista.rings).getBounds(), { maxZoom: 17, padding: [30, 30] });
+  }, [map, coloniaVista]);
+
+  // Buscador de colonias: como el de más abajo (bardas), pero para ver el
+  // polígono en el mapa en vez de para registrar una visita.
+  useEffect(() => {
+    if (textoColonia.trim().length < 2) {
+      setResultadosColonia(null);
+      return;
+    }
+    let vivo = true;
+    const tid = setTimeout(async () => {
+      const r = await buscarColonias(textoColonia);
+      if (vivo) setResultadosColonia(r);
+    }, 250);
+    return () => {
+      vivo = false;
+      clearTimeout(tid);
+    };
+  }, [textoColonia]);
+
+  async function elegirResultadoColonia(r) {
+    const rings = await ringsPorClave(r.k);
+    if (!rings) {
+      setAvisoColonia('Esa colonia no trae límites dibujados en el catálogo.');
+      return;
+    }
+    setResultadosColonia(null);
+    setTextoColonia('');
+    setColoniaVista({ nombre: r.n, rings });
+  }
 
   // Dónde estás y hacia dónde ves. Con brújula sale una flecha que gira con el
   // teléfono (caminando en una colonia desconocida, "hacia dónde voy" importa
@@ -1094,11 +1259,101 @@ export default function Bardas() {
             >
               {verDistritos ? '🗺️ Ocultar distritos' : '🗺️ Ver distritos'}
             </button>
+            <button
+              className={buscandoColonia ? 'boton primario mini' : 'boton suave mini'}
+              onClick={() => {
+                setBuscandoColonia((v) => !v);
+                setResultadosColonia(null);
+                setTextoColonia('');
+                setAvisoColonia('');
+              }}
+            >
+              🔎 Buscar colonia
+            </button>
+            <button
+              className={mostrarFiltros ? 'boton primario mini' : 'boton suave mini'}
+              onClick={() => setMostrarFiltros((v) => !v)}
+            >
+              🔍 Filtros{filtrosMapa.size < ESTADOS.length + 1 ? ` (${filtrosMapa.size})` : ''}
+            </button>
             {!agregando && (
               <button className="boton suave mini" onClick={abrirAgregar}>
                 ➕ Agregar barda
               </button>
             )}
+          </div>
+        )}
+
+        {/* ---------- QUÉ BARDAS SE VEN EN EL MAPA ---------- */}
+        {!cargando && mostrarFiltros && (
+          <div className="tarjeta-equipo" style={{ borderLeftColor: '#457b9d' }}>
+            <p className="nota" style={{ marginTop: 0 }}>Qué bardas mostrar en el mapa:</p>
+            <label className="fila" style={{ alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={filtrosMapa.has('pendiente')}
+                onChange={() => alternarFiltroMapa('pendiente')}
+              />
+              ⚪ Sin visitar
+            </label>
+            {ESTADOS.map((e) => (
+              <label key={e.id} className="fila" style={{ alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={filtrosMapa.has(e.id)}
+                  onChange={() => alternarFiltroMapa(e.id)}
+                />
+                {e.etiqueta}
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* ---------- BUSCAR / VER UNA COLONIA EN EL MAPA ---------- */}
+        {!cargando && buscandoColonia && (
+          <div className="tarjeta-equipo" style={{ borderLeftColor: '#457b9d' }}>
+            <p className="nota" style={{ marginTop: 0 }}>
+              También puedes mantener presionado un punto del mapa para ver de
+              qué colonia se trata.
+            </p>
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Nombre de la colonia…"
+              value={textoColonia}
+              onChange={(e) => setTextoColonia(e.target.value)}
+            />
+            {resultadosColonia && resultadosColonia.length === 0 && (
+              <p className="nota">Sin resultados.</p>
+            )}
+            {resultadosColonia && resultadosColonia.length > 0 && (
+              <div>
+                {resultadosColonia.map((r) => (
+                  <div
+                    key={r.k}
+                    className="resultado"
+                    onClick={() => elegirResultadoColonia(r)}
+                  >
+                    <strong>{r.n}</strong> · {r.t}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!cargando && avisoColonia && <div className="aviso">⚠ {avisoColonia}</div>}
+
+        {!cargando && coloniaVista && (
+          <div className="aviso" style={{ background: '#eef4fc', borderColor: '#c3d8f0' }}>
+            🗺️ Viendo <strong>{coloniaVista.nombre}</strong>
+            <button
+              className="boton suave mini"
+              style={{ marginLeft: 8 }}
+              onClick={() => setColoniaVista(null)}
+            >
+              ✕ Quitar
+            </button>
           </div>
         )}
 
@@ -1144,7 +1399,8 @@ export default function Bardas() {
                     <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
                       <span>
                         {nombreBarda(b)}
-                        {b.foto ? ' 📷' : ''}
+                        {esBuena(b.id) ? ' ⭐' : ''}
+                        {fotosDeBarda(b).length > 0 ? ' 📷' : ''}
                         <br />
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>{b.colonia}</span>
                       </span>
@@ -1204,7 +1460,7 @@ export default function Bardas() {
                     <li key={b.id} onClick={() => abrirRegistro(b)} style={{ cursor: 'pointer' }}>
                       <span>
                         <strong>{i + 1}.</strong> {nombreBarda(b)}
-                        {b.foto ? ' 📷' : ''}
+                        {fotosDeBarda(b).length > 0 ? ' 📷' : ''}
                         <br />
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>
                           {b.colonia}
@@ -1251,7 +1507,7 @@ export default function Bardas() {
             <div ref={formNuevaRef} className="tarjeta-equipo" style={{ borderLeftColor: '#1d6fd1' }}>
                 {editandoId && (
                   <p className="nota" style={{ marginTop: 0 }}>
-                    Si no eliges foto nueva, se queda la que ya tenía.
+                    Las fotos que ya tenía se conservan salvo que las quites con la ✕.
                   </p>
                 )}
                 <label className="etiqueta">Dirección (opcional)</label>
@@ -1282,33 +1538,46 @@ export default function Bardas() {
                   </p>
                 )}
 
-                <label className="etiqueta">Foto (opcional)</label>
+                <label className="etiqueta">Fotos (opcional, se pueden agregar varias)</label>
                 <input
                   type="file"
                   accept="image/*"
                   capture="environment"
+                  multiple
                   onChange={(e) => {
-                    const archivo = e.target.files?.[0] || null;
-                    if (formNueva.previewUrl) URL.revokeObjectURL(formNueva.previewUrl);
-                    setFormNueva((f) => ({
-                      ...f,
+                    const elegidos = Array.from(e.target.files || []);
+                    if (!elegidos.length) return;
+                    const nuevas = elegidos.map((archivo) => ({
+                      tipo: 'nueva',
                       archivo,
-                      previewUrl: archivo ? URL.createObjectURL(archivo) : null
+                      previewUrl: URL.createObjectURL(archivo)
                     }));
+                    setFormNueva((f) => ({ ...f, fotos: [...f.fotos, ...nuevas] }));
+                    e.target.value = ''; // para poder elegir el mismo archivo otra vez si se quita
                   }}
                 />
-                {formNueva.previewUrl && (
-                  <img
-                    src={formNueva.previewUrl}
-                    alt=""
-                    style={{
-                      width: '100%',
-                      maxHeight: 180,
-                      objectFit: 'cover',
-                      borderRadius: 8,
-                      marginTop: 8
-                    }}
-                  />
+                {formNueva.fotos.length > 0 && (
+                  <div className="galeria-miniaturas">
+                    {formNueva.fotos.map((f, i) => (
+                      <div key={i} className="miniatura">
+                        <img src={f.tipo === 'existente' ? urlFoto(f.url) : f.previewUrl} alt="" />
+                        <button
+                          type="button"
+                          className="quitar-miniatura"
+                          aria-label="Quitar esta foto"
+                          onClick={() => {
+                            if (f.tipo === 'nueva') URL.revokeObjectURL(f.previewUrl);
+                            setFormNueva((form) => ({
+                              ...form,
+                              fotos: form.fotos.filter((_, j) => j !== i)
+                            }));
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
 
                 <label className="etiqueta">O pega el link de ubicación de Google Maps (opcional)</label>
@@ -1384,7 +1653,7 @@ export default function Bardas() {
               return (
                 <div key={b.id} className="resultado" onClick={() => abrirRegistro(b)}>
                   <strong>{nombreBarda(b)}</strong>
-                  {b.foto ? ' 📷' : ''}
+                  {fotosDeBarda(b).length > 0 ? ' 📷' : ''}
                   <div style={{ fontSize: '0.8rem', color: '#666' }}>
                     {b.colonia}
                     {est
@@ -1460,20 +1729,26 @@ export default function Bardas() {
               </div>
             )}
 
-            {registrando.foto && (
-              <img
-                src={urlFoto(registrando.foto)}
-                alt="Foto de la barda"
-                style={{
-                  width: '100%',
-                  maxHeight: 220,
-                  objectFit: 'cover',
-                  borderRadius: 8,
-                  margin: '8px 0',
-                  cursor: 'zoom-in'
-                }}
-                onClick={() => window.open(urlFoto(registrando.foto), '_blank')}
+            <label className="fila" style={{ alignItems: 'center', gap: 6, marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={esBuena(registrando.id)}
+                onChange={(e) => marcarBuena(registrando.id, e.target.checked)}
               />
+              ⭐ ¿Es buena barda?
+            </label>
+
+            {fotosDeBarda(registrando).length > 0 && (
+              <div className="galeria-fotos">
+                {fotosDeBarda(registrando).map((foto, i) => (
+                  <img
+                    key={i}
+                    src={urlFoto(foto)}
+                    alt="Foto de la barda"
+                    onClick={() => window.open(urlFoto(foto), '_blank')}
+                  />
+                ))}
+              </div>
             )}
 
             <div className="fila">

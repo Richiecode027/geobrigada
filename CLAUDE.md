@@ -193,6 +193,28 @@ para brigadistas, registro de material repartido.
 - El equipo se puede editar AL registrar cada barda, no solo en la pantalla de
   inicio: sirve para capturar las que otro equipo hizo a mano. Al reabrir una
   barda ya registrada se respeta el equipo original en vez de reasignarla.
+- "¿Es buena barda?" (ago 2026): checkbox en la ficha, aparte de "Guardar" —
+  se guarda solo al tocarlo, en `bardas_calidad` (independiente de si ya se le
+  preguntó al dueño: sirve para decidir por dónde empezar). El pin en el mapa
+  lleva un anillo dorado (box-shadow, no tapa el color de estado).
+- Varias fotos por barda (ago 2026): el selector de foto al agregar/corregir
+  acepta `multiple`; cada una se sube con su propio nombre de archivo (antes
+  siempre era "<id>.jpg", bueno solo para una) y se guardan en el arreglo
+  `bardas_nuevas.fotos`. `foto` (singular) se conserva como respaldo de las
+  que ya estaban antes de que se pudiera subir más de una. La ficha las
+  enseña en una franja que se desliza con el dedo (`scroll-snap` de CSS, no
+  JS propio de arrastre — para no repetir el bug de eventos táctiles pasivos
+  de AsaPanel).
+- Ver una colonia en el mapa (ago 2026): mantener presionado un punto dibuja
+  su polígono y nombre (`map.on('contextmenu', …)`, que dispara igual con
+  long-press en el teléfono y clic derecho en computadora — sin temporizador
+  táctil propio). También hay un buscador por nombre. Sirve para saber qué
+  calles tocan a una colonia sin tener que adivinar por dónde va su límite;
+  antes había que ir tocando bardas una por una para ubicarse.
+- Filtro de qué se ve en el mapa (ago 2026): checkboxes por resultado (sin
+  visitar, con permiso, sin permiso, visitado, no habitado) sobre el efecto
+  que dibuja los pines — no son listas aparte, así que no hay que
+  mantenerlas sincronizadas con nada más.
 - Es PWA: public/manifest.webmanifest + public/sw.js (service worker: app y
   azulejos del mapa sin internet). Íconos: `node scripts/gen-iconos.mjs`.
 - Versión APK Android (Capacitor, plan en docs/version-movil-apk.md): la MISMA

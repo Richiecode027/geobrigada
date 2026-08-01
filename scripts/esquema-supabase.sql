@@ -270,3 +270,35 @@ alter table bardas_permisos add column if not exists estado text;
 update bardas_permisos
    set estado = case when permiso then 'con_permiso' else 'sin_permiso' end
  where estado is null;
+
+-- ---------------------------------------------------------------------------
+-- "¿Es buena barda?" (ago 2026): para decidir por dónde empezar, piden poder
+-- marcar qué bardas se ven mejor que otras. Es independiente de si ya se le
+-- preguntó al dueño o no —una barda puede ser "buena" y seguir pendiente— así
+-- que va en su propia tabla, aplicable a CUALQUIER barda (del Excel o
+-- agregada desde la app), igual que bardas_reservadas.
+
+create table if not exists bardas_calidad (
+  barda_id text primary key,
+  buena boolean not null,
+  equipo text,
+  actualizado timestamptz not null default now()
+);
+
+alter table bardas_calidad enable row level security;
+
+create policy "marcar la calidad de una barda"
+  on bardas_calidad for insert to anon with check (true);
+
+create policy "corregir la calidad de una barda"
+  on bardas_calidad for update to anon using (true) with check (true);
+
+create policy "todos ven que bardas son buenas"
+  on bardas_calidad for select to anon using (true);
+
+-- ---------------------------------------------------------------------------
+-- Varias fotos por barda (ago 2026): antes solo se guardaba una. Las nuevas
+-- se agregan en este arreglo; `foto` se conserva para las ~110 que ya solo
+-- traían una (se sigue leyendo como respaldo si "fotos" viene vacío).
+
+alter table bardas_nuevas add column if not exists fotos jsonb not null default '[]'::jsonb;
