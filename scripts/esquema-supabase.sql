@@ -1,5 +1,13 @@
 -- Esquema de GeoBrigada para Supabase.
--- Se pega completo en el SQL Editor del proyecto y se presiona "Run" una vez.
+-- Se pega completo en el SQL Editor del proyecto y se presiona "Run".
+--
+-- Es seguro correr el archivo ENTERO las veces que haga falta, aunque ya se
+-- haya corrido antes: "create table/column if not exists" no rehace lo que
+-- ya existe, y cada "create policy" trae su "drop policy if exists" arriba
+-- (Postgres no tiene "create policy if not exists"). Nada de esto toca las
+-- FILAS ya guardadas — solo define de nuevo las reglas de acceso, así que
+-- no hay riesgo de perder información aunque se pegue por accidente el
+-- archivo completo en vez de solo la parte nueva.
 
 create table if not exists reportes (
   id uuid primary key default gen_random_uuid(),
@@ -22,9 +30,11 @@ create table if not exists reportes (
 -- modificar nada. Borrar se hace desde el panel de Supabase.
 alter table reportes enable row level security;
 
+drop policy if exists "brigadistas suben reportes" on reportes;
 create policy "brigadistas suben reportes"
   on reportes for insert to anon with check (true);
 
+drop policy if exists "coordinador lee reportes" on reportes;
 create policy "coordinador lee reportes"
   on reportes for select to anon using (true);
 
@@ -46,12 +56,15 @@ create table if not exists posiciones (
 
 alter table posiciones enable row level security;
 
+drop policy if exists "brigadistas reportan posicion" on posiciones;
 create policy "brigadistas reportan posicion"
   on posiciones for insert to anon with check (true);
 
+drop policy if exists "brigadistas actualizan su posicion" on posiciones;
 create policy "brigadistas actualizan su posicion"
   on posiciones for update to anon using (true) with check (true);
 
+drop policy if exists "coordinador ve posiciones" on posiciones;
 create policy "coordinador ve posiciones"
   on posiciones for select to anon using (true);
 
@@ -67,12 +80,15 @@ create table if not exists calles_cache (
 
 alter table calles_cache enable row level security;
 
+drop policy if exists "lee cache calles" on calles_cache;
 create policy "lee cache calles"
   on calles_cache for select to anon using (true);
 
+drop policy if exists "guarda cache calles" on calles_cache;
 create policy "guarda cache calles"
   on calles_cache for insert to anon with check (true);
 
+drop policy if exists "refresca cache calles" on calles_cache;
 create policy "refresca cache calles"
   on calles_cache for update to anon using (true) with check (true);
 
@@ -114,9 +130,11 @@ create index if not exists rastro_nativo_ruta_creado
 
 alter table rastro_nativo enable row level security;
 
+drop policy if exists "el relay de gps guarda puntos" on rastro_nativo;
 create policy "el relay de gps guarda puntos"
   on rastro_nativo for insert to anon with check (true);
 
+drop policy if exists "el brigadista lee su rastro al reabrir" on rastro_nativo;
 create policy "el brigadista lee su rastro al reabrir"
   on rastro_nativo for select to anon using (true);
 
@@ -148,12 +166,15 @@ create table if not exists bardas_permisos (
 
 alter table bardas_permisos enable row level security;
 
+drop policy if exists "equipos registran permisos de barda" on bardas_permisos;
 create policy "equipos registran permisos de barda"
   on bardas_permisos for insert to anon with check (true);
 
+drop policy if exists "equipos corrigen el permiso de una barda" on bardas_permisos;
 create policy "equipos corrigen el permiso de una barda"
   on bardas_permisos for update to anon using (true) with check (true);
 
+drop policy if exists "todos ven que bardas ya se visitaron" on bardas_permisos;
 create policy "todos ven que bardas ya se visitaron"
   on bardas_permisos for select to anon using (true);
 
@@ -186,9 +207,11 @@ create table if not exists bardas_nuevas (
 
 alter table bardas_nuevas enable row level security;
 
+drop policy if exists "cualquiera agrega una barda nueva" on bardas_nuevas;
 create policy "cualquiera agrega una barda nueva"
   on bardas_nuevas for insert to anon with check (true);
 
+drop policy if exists "todos ven las bardas nuevas" on bardas_nuevas;
 create policy "todos ven las bardas nuevas"
   on bardas_nuevas for select to anon using (true);
 
@@ -198,10 +221,12 @@ insert into storage.buckets (id, name, public)
 values ('bardas-fotos-nuevas', 'bardas-fotos-nuevas', true)
 on conflict (id) do nothing;
 
+drop policy if exists "cualquiera sube foto de barda nueva" on storage.objects;
 create policy "cualquiera sube foto de barda nueva"
   on storage.objects for insert to anon
   with check (bucket_id = 'bardas-fotos-nuevas');
 
+drop policy if exists "cualquiera ve fotos de bardas nuevas" on storage.objects;
 create policy "cualquiera ve fotos de bardas nuevas"
   on storage.objects for select to anon
   using (bucket_id = 'bardas-fotos-nuevas');
@@ -223,12 +248,15 @@ create table if not exists bardas_reservadas (
 
 alter table bardas_reservadas enable row level security;
 
+drop policy if exists "equipos apartan bardas al iniciar su ruta" on bardas_reservadas;
 create policy "equipos apartan bardas al iniciar su ruta"
   on bardas_reservadas for insert to anon with check (true);
 
+drop policy if exists "equipos renuevan o liberan su reserva" on bardas_reservadas;
 create policy "equipos renuevan o liberan su reserva"
   on bardas_reservadas for update to anon using (true) with check (true);
 
+drop policy if exists "todos ven que bardas estan apartadas" on bardas_reservadas;
 create policy "todos ven que bardas estan apartadas"
   on bardas_reservadas for select to anon using (true);
 
@@ -243,10 +271,12 @@ create policy "todos ven que bardas estan apartadas"
 
 alter table bardas_nuevas add column if not exists borrado boolean not null default false;
 
+drop policy if exists "corregir o quitar una barda agregada" on bardas_nuevas;
 create policy "corregir o quitar una barda agregada"
   on bardas_nuevas for update to anon using (true) with check (true);
 
 -- Para poder reemplazar la foto de una barda ya guardada.
+drop policy if exists "reemplazar foto de barda nueva" on storage.objects;
 create policy "reemplazar foto de barda nueva"
   on storage.objects for update to anon
   using (bucket_id = 'bardas-fotos-nuevas')
@@ -287,12 +317,15 @@ create table if not exists bardas_calidad (
 
 alter table bardas_calidad enable row level security;
 
+drop policy if exists "marcar la calidad de una barda" on bardas_calidad;
 create policy "marcar la calidad de una barda"
   on bardas_calidad for insert to anon with check (true);
 
+drop policy if exists "corregir la calidad de una barda" on bardas_calidad;
 create policy "corregir la calidad de una barda"
   on bardas_calidad for update to anon using (true) with check (true);
 
+drop policy if exists "todos ven que bardas son buenas" on bardas_calidad;
 create policy "todos ven que bardas son buenas"
   on bardas_calidad for select to anon using (true);
 
