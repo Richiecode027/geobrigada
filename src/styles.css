@@ -71,7 +71,10 @@ body {
 }
 
 /* Asa para plegar/desplegar el panel (solo tiene sentido en el teléfono,
-   donde el panel le quita la mitad de la pantalla al mapa). */
+   donde el panel le quita la mitad de la pantalla al mapa). Se puede tocar o
+   arrastrar; touch-action:none le dice al navegador que ESTE elemento no es
+   para hacer scroll de la página, para que el gesto de arrastre le llegue a
+   JavaScript en vez de que el navegador se lo quede como un pan de mapa. */
 .asa-panel {
   display: none;
   width: 100%;
@@ -85,6 +88,7 @@ body {
   top: -12px; /* compensa el padding del panel para pegarse al borde */
   margin-top: -6px;
   z-index: 5;
+  touch-action: none;
 }
 .asa-barrita {
   display: block;
@@ -96,8 +100,6 @@ body {
 }
 @media (max-width: 899px) {
   .asa-panel { display: block; }
-  /* Plegado: solo se ve el asa; el mapa se queda con toda la pantalla */
-  .panel.plegado > :not(.asa-panel) { display: none; }
 }
 
 .mapa { flex: 1; min-height: 40dvh; }
@@ -107,6 +109,17 @@ body {
   overflow-y: auto;
   max-height: 50dvh;
   padding: 12px;
+}
+
+/* Plegado: el panel se encoge hasta dejar solo el asa a la vista (el
+   contenido sigue ahí, nada más queda tapado) — con transición, para que se
+   vea bajar y subir en vez de aparecer/desaparecer de golpe. Mientras se
+   arrastra, AsaPanel.jsx pone su propia altura en línea y apaga esta
+   transición, para que siga al dedo 1 a 1; al soltar, la vuelve a prender
+   para que la última parte del recorrido sí se anime. */
+@media (max-width: 899px) {
+  .panel { transition: max-height 0.22s ease; }
+  .panel.plegado { max-height: 44px; overflow: hidden; }
 }
 
 .panel h2 { font-size: 1rem; margin: 4px 0 10px; color: var(--azul); }

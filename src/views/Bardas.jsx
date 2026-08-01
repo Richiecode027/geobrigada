@@ -141,6 +141,7 @@ function pinBarda(latlng, texto, color, colorTexto) {
 
 export default function Bardas() {
   const mapaRef = useRef(null);
+  const panelRef = useRef(null);
   const map = useMap(mapaRef);
   const capaBardas = useRef(null);
   const capaYo = useRef(null);
@@ -787,10 +788,12 @@ export default function Bardas() {
   }, [map, miPos, ruta, porCalles]);
 
   // Al plegar o desplegar el panel, el mapa cambia de tamaño: hay que avisarle
-  // a Leaflet o se queda con el tamaño viejo y los pines salen corridos.
+  // a Leaflet o se queda con el tamaño viejo y los pines salen corridos. El
+  // panel ahora tarda ~220ms en deslizarse (antes era un cambio de golpe),
+  // así que se espera a que termine esa animación antes de medir.
   useEffect(() => {
     if (!map) return;
-    const tid = setTimeout(() => map.invalidateSize({ animate: false }), 80);
+    const tid = setTimeout(() => map.invalidateSize({ animate: false }), 260);
     return () => clearTimeout(tid);
   }, [map, panelPlegado]);
 
@@ -1055,8 +1058,8 @@ export default function Bardas() {
   return (
     <div className="contenido">
       <div className="mapa" ref={mapaRef} />
-      <div className={'panel' + (panelPlegado ? ' plegado' : '')}>
-        <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} />
+      <div ref={panelRef} className={'panel' + (panelPlegado ? ' plegado' : '')}>
+        <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} panelRef={panelRef} />
         <h2>Bardas por pedir permiso</h2>
 
         {cargando && <p>Cargando bardas…</p>}

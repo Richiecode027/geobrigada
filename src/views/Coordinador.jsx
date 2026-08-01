@@ -12,6 +12,7 @@ import { cargarActividades, recordarActividad } from '../lib/storage.js';
 
 export default function Coordinador({ contexto }) {
   const mapaRef = useRef(null);
+  const panelRef = useRef(null);
   const map = useMap(mapaRef);
 
   const capaColonia = useRef(null);
@@ -397,8 +398,8 @@ export default function Coordinador({ contexto }) {
   return (
     <div className={'contenido' + (busquedaActiva ? ' busqueda-activa' : '')}>
       <div className="mapa" ref={mapaRef} />
-      <div className={'panel' + (panelPlegado ? ' plegado' : '')}>
-        <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} />
+      <div ref={panelRef} className={'panel' + (panelPlegado ? ' plegado' : '')}>
+        <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} panelRef={panelRef} />
         <h2>1. Busca la colonia</h2>
         <form onSubmit={buscar} className="fila">
           <input
