@@ -143,6 +143,7 @@ export default function Bardas() {
   const capaBardas = useRef(null);
   const capaYo = useRef(null);
   const capaDistritos = useRef(null);
+  const capaLineaDirecta = useRef(null);
   const detenerGPS = useRef(null);
   const yaCalculada = useRef(false);
 
@@ -649,6 +650,12 @@ export default function Bardas() {
   }
 
   // --- mapa ----------------------------------------------------------------
+  // OJO con la lista de dependencias de aquí abajo: este efecto tira y vuelve
+  // a crear los ~350 pines, que son la mayor parte de los elementos de la
+  // pantalla. Tenía `miPos` entre sus dependencias, así que se rehacía con
+  // CADA lectura del GPS — o sea, cada pocos segundos mientras el brigadista
+  // camina, que es justo cuando necesita mover el mapa. De ahí que se sintiera
+  // trabado en el teléfono. Solo debe rehacerse cuando cambian los DATOS.
   useEffect(() => {
     if (!map) return;
     if (capaBardas.current) capaBardas.current.remove();
@@ -697,22 +704,31 @@ export default function Bardas() {
         .addTo(g);
     }
 
-    // Trazo del recorrido: por calles reales si se pudieron descargar; si no,
-    // línea punteada directa (se avisa en el panel para no engañar).
-    if (ruta.length > 0) {
-      for (const b of ruta) {
-        if (b.trazo && b.trazo.length > 1) {
-          L.polyline(b.trazo, { color: '#1d6fd1', weight: 4, opacity: 0.75 }).addTo(g);
-        }
-      }
-      if (!porCalles && miPos) {
-        L.polyline([miPos, ...ruta.map((b) => [b.lat, b.lng])], {
-          color: '#1d6fd1', weight: 3, opacity: 0.5, dashArray: '6 6'
-        }).addTo(g);
+    // Trazo del recorrido por calles reales. (La línea punteada de respaldo va
+    // en su propia capa, más abajo: esa sí depende de dónde estás parado y no
+    // puede arrastrar a los pines a redibujarse con ella.)
+    for (const b of ruta) {
+      if (b.trazo && b.trazo.length > 1) {
+        L.polyline(b.trazo, { color: '#1d6fd1', weight: 4, opacity: 0.75 }).addTo(g);
       }
     }
     capaBardas.current = g;
-  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles, miPos]);
+  }, [map, todas, permisosVigentes, reservasAjenas, misApartadas, ruta, porCalles]);
+
+  // Línea punteada de tu posición a las bardas, solo cuando no se pudieron
+  // bajar las calles. Capa aparte y ligera (una polilínea), para que seguir el
+  // GPS no cueste rehacer los cientos de pines de arriba.
+  useEffect(() => {
+    if (!map) return;
+    if (capaLineaDirecta.current) {
+      capaLineaDirecta.current.remove();
+      capaLineaDirecta.current = null;
+    }
+    if (porCalles || !miPos || ruta.length === 0) return;
+    capaLineaDirecta.current = L.polyline([miPos, ...ruta.map((b) => [b.lat, b.lng])], {
+      color: '#1d6fd1', weight: 3, opacity: 0.5, dashArray: '6 6', interactive: false
+    }).addTo(map);
+  }, [map, miPos, ruta, porCalles]);
 
   // Al plegar o desplegar el panel, el mapa cambia de tamaño: hay que avisarle
   // a Leaflet o se queda con el tamaño viejo y los pines salen corridos.
