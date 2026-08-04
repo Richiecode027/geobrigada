@@ -136,12 +136,21 @@ para brigadistas, registro de material repartido.
   alguien la reabra y cambie el resultado a mano.
 - Corte para la oficina: botón "Exportar corte a Excel" en la vista Bardas
   (src/lib/corteBardas.js), con filtro Todas / Solo visitadas / Solo con
-  permiso. Sigue el reporte que ya se usa (NO./BRIGADA/DIRECCION/COLONIA/
-  DISTRITO//REFERENCIAS/COMPROMISO) pero con UNA sola columna ESTADO en vez
-  de las casillas CON PERMISO y SIN PERMISO (no alcanzaban para los cuatro
-  resultados), más BUENA (de bardas_calidad), EQUIPO, ATENDIÓ, TELÉFONO,
-  NOTAS y REGISTRADO. `xlsx` es dependencia de runtime pero queda en su
-  propio chunk: solo se descarga al tocar el botón, nunca en la app del
+  permiso. Las columnas y su orden son EXACTO el archivo que ya usa la
+  oficina para pasar bardas a pintura ("PINTA DE BARDAS MORELIA", hoja
+  BARDAS): RESPONSABLE (nuestro `equipo`) / BRIGADA / NOMBRE / TELEFONO /
+  DIRECCION (CALLE Y NUMERO) / COLONIA / DISTRITO / REFERENCIAS / STATUS
+  (AUTORIZADO O VISTA — nuestros 4 resultados se reducen a Autorizada si
+  hubo permiso, Vista si se visitó sin permiso, vacío si sigue pendiente) /
+  COMENTARIOS / BRIGADA QUE ASISTE / FECHA DE PROGRAMACION (estas dos
+  últimas las llena la oficina a mano después, siempre salen vacías de
+  aquí). Al final, aparte de esas columnas oficiales, van BUENA (de
+  bardas_calidad), COMPROMISO y REGISTRADO, que ya teníamos y no estorban
+  al formato. Las bardas agregadas desde el teléfono nunca traen el link de
+  Maps del Excel original (columna REFERENCIAS): sin esto salían con la
+  ubicación en blanco en el corte, así que ahí se arma un link a partir de
+  su lat/lng. `xlsx` es dependencia de runtime pero queda en su propio
+  chunk: solo se descarga al tocar el botón, nunca en la app del
   brigadista.
 - Al agregar una barda nueva, src/lib/ubicacion.js llena solos colonia,
   distrito y calle desde la ubicación. La COLONIA sale del catálogo INEGI que

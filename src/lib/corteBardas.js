@@ -1,24 +1,42 @@
 // Arma el Excel del corte: qué equipo hizo qué bardas.
 //
-// Sigue el formato del reporte que ya usan en la oficina
-//   NO. | BRIGADA | DIRECCION | COLONIA | DISTRITO | (vacía) | REFERENCIAS |
-//   CON PERMISO | SIN PERMISO | COMPROMISO
-// y le agrega al final lo que el corte necesita y ese formato no traía:
-// EQUIPO, ESTADO, quién atendió, teléfono, notas y cuándo se registró.
+// Sigue EXACTO el formato que ya usa la oficina para pasar las bardas
+// autorizadas a pintura ("PINTA DE BARDAS MORELIA", hoja BARDAS):
+//   RESPONSABLE | BRIGADA | NOMBRE | TELEFONO | DIRECCION (CALLE Y NUMERO) |
+//   COLONIA | DISTRITO | REFERENCIAS | STATUS (AUTORIZADO O VISTA) |
+//   COMENTARIOS | BRIGADA QUE ASISTE | FECHA DE PROGRAMACION
+// Las últimas dos las llena la oficina a mano después (qué equipo va a pintar
+// y cuándo) — aquí siempre salen vacías. Al final, aparte de esas columnas
+// oficiales, van tres que ya teníamos y no estorban al formato: BUENA,
+// COMPROMISO y REGISTRADO.
 //
 // La librería (xlsx) se carga solo al momento de exportar: pesa bastante y no
 // tiene por qué hacer más lenta la app del brigadista, que nunca la usa.
 
-const ETIQUETA_ESTADO = {
-  con_permiso: 'Con permiso',
-  sin_permiso: 'Sin permiso',
-  visitado: 'Visitado (no había nadie)',
-  no_habitado: 'No habitado'
-};
-
 // Las filas viejas, de antes de que existiera `estado`, solo traen el booleano.
 const estadoDe = (p) =>
   p?.estado || (p?.permiso === true ? 'con_permiso' : p?.permiso === false ? 'sin_permiso' : null);
+
+// La columna STATUS de la oficina solo distingue dos cosas: si dejaron pintar
+// o no. Nuestros cuatro resultados (sin_permiso/visitado/no_habitado) caen
+// los tres en "Vista": ya se fue, pero no quedó autorizada. Pendiente (nadie
+// ha ido todavía) se deja en blanco: no encaja en ninguna de las dos.
+const statusDe = (estado) => {
+  if (estado === 'con_permiso') return 'Autorizada';
+  if (estado) return 'Vista';
+  return '';
+};
+
+// Las bardas agregadas desde la app nunca traen REFERENCIAS (ese campo solo
+// lo trae el Excel original, con el link de Maps que resolvió quien buscó la
+// barda en carro) — pero sí tienen lat/lng, porque ubicarlas con el GPS es
+// obligatorio para darlas de alta. Sin este respaldo, cualquier barda
+// agregada desde el teléfono salía con la columna de ubicación vacía.
+function urlUbicacion(b) {
+  if (b.referencia) return b.referencia;
+  if (b.lat == null || b.lng == null) return '';
+  return `https://www.google.com/maps/search/?api=1&query=${b.lat},${b.lng}`;
+}
 
 const fechaBonita = (iso) => {
   if (!iso) return '';
@@ -32,26 +50,26 @@ const fechaBonita = (iso) => {
 };
 
 const ENCABEZADOS = [
-  'NO.',
+  'RESPONSABLE',
   'BRIGADA',
-  'DIRECCION',
+  'NOMBRE',
+  'TELEFONO',
+  'DIRECCION (CALLE Y NUMERO)',
   'COLONIA',
   'DISTRITO',
-  '',
   'REFERENCIAS',
-  'ESTADO',
+  'STATUS (AUTORIZADO O VISTA)',
+  'COMENTARIOS',
+  'BRIGADA QUE ASISTE',
+  'FECHA DE PROGRAMACION',
   'BUENA',
   'COMPROMISO ',
-  'EQUIPO',
-  'ATENDIÓ',
-  'TELÉFONO',
-  'NOTAS',
   'REGISTRADO'
 ];
 
 // Ancho de cada columna, en caracteres (si no, sale todo apretado y hay que
 // arrastrar 15 columnas a mano antes de poder leer el corte).
-const ANCHOS = [6, 8, 34, 22, 9, 3, 40, 24, 7, 22, 14, 20, 14, 30, 18];
+const ANCHOS = [16, 8, 20, 14, 34, 22, 9, 40, 22, 30, 18, 20, 7, 22, 18];
 
 // Qué bardas entran en el corte.
 export const FILTROS = [
@@ -84,20 +102,20 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
     const estado = estadoDe(p);
     if (!pasaElFiltro(estado, filtro)) continue;
     filas.push([
-      b.id,
+      p?.equipo || '',
       b.brigada || '',
+      p?.nombre || '',
+      p?.telefono || '',
       b.direccion || '',
       b.colonia || '',
       b.distrito || '',
-      '',
-      b.referencia || '',
-      estado ? ETIQUETA_ESTADO[estado] || estado : 'Pendiente',
+      urlUbicacion(b),
+      statusDe(estado),
+      p?.notas || '',
+      '', // BRIGADA QUE ASISTE: la asigna la oficina después
+      '', // FECHA DE PROGRAMACION: la agenda la oficina después
       buenasPorId.has(String(b.id)) ? 'Sí' : '',
       p?.a_cambio || '',
-      p?.equipo || '',
-      p?.nombre || '',
-      p?.telefono || '',
-      p?.notas || '',
       fechaBonita(p?.actualizado)
     ]);
   }
