@@ -688,6 +688,12 @@ export default function Bardas() {
     try {
       const coords = await coordsDeLinkMaps(linkNueva);
       posDeLinkRef.current = true;
+      // Si el GPS ganó la carrera antes de pegar el link, colonia/calle ya
+      // quedaron llenas con la ubicación de quien está capturando — y el
+      // autollenado de abajo solo escribe en campos VACÍOS, así que sin este
+      // borrón se quedarían con la ubicación equivocada aunque el pin (que
+      // sí se corrige) ya apunte bien al link.
+      setFormNueva((f) => ({ ...f, direccion: '', colonia: '', distrito: '' }));
       setPosNueva(coords);
       setGpsNuevaError('');
     } catch (e) {
@@ -1557,7 +1563,6 @@ export default function Bardas() {
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   multiple
                   onChange={(e) => {
                     const elegidos = Array.from(e.target.files || []);

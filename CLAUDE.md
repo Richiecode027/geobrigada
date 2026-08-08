@@ -160,7 +160,15 @@ para brigadistas, registro de material repartido.
   Dirección y colonia quedan editables; el distrito NO se pregunta (ubicación
   + calle + colonia ya identifican la barda) pero sí se guarda, porque el
   corte lo lleva como columna. El número de casa no se pide: OSM casi no lo
-  tiene en Morelia.
+  tiene en Morelia. El GPS arranca a pedirse en cuanto se abre el formulario,
+  así que si el equipo pega un link para dar de alta una barda que NO es
+  donde está parado, es normal que el GPS (de donde sí está) le gane la
+  carrera y llene colonia/calle con su propia ubicación antes de que el link
+  resuelva. Por eso `usarLink` borra esos tres campos justo antes de fijar
+  las coordenadas del link: si no, el autollenado de arriba no los vuelve a
+  tocar porque ya no están vacíos (esa regla existe para no pisar lo que el
+  equipo escribió a mano) y se quedaban con la ubicación equivocada aunque
+  el pin sí quedara bien puesto.
 - DISTRITOS LOCALES (jul 2026): `public/distritos_morelia.json` (71 KB) trae
   los límites oficiales de los 4 distritos electorales LOCALES que cubren el
   municipio de Morelia — 10, 11, 16 y 17 — recortados al municipio (incluye
@@ -214,7 +222,11 @@ para brigadistas, registro de material repartido.
   que ya estaban antes de que se pudiera subir más de una. La ficha las
   enseña en una franja que se desliza con el dedo (`scroll-snap` de CSS, no
   JS propio de arrastre — para no repetir el bug de eventos táctiles pasivos
-  de AsaPanel).
+  de AsaPanel). El `<input type="file">` NO lleva `capture="environment"`:
+  con ese atributo, la mayoría de los celulares (sobre todo Android) abren la
+  cámara directo y ni siquiera enseñan la opción de elegir de la galería —
+  lo cual también impedía agregarle foto después a una barda que se guardó
+  sin ninguna, porque para entonces el equipo ya no está parado ahí.
 - Ver una colonia en el mapa (ago 2026): mantener presionado un punto dibuja
   su polígono y nombre (`map.on('contextmenu', …)`, que dispara igual con
   long-press en el teléfono y clic derecho en computadora — sin temporizador
