@@ -811,6 +811,36 @@ export default function Bardas() {
     const enRuta = new Map(ruta.map((b, i) => [String(b.id), i + 1]));
     const esMia = new Set(misApartadas.map((b) => String(b.id)));
 
+    // Bardas que caen en la MISMA coordenada exacta (casi siempre porque un
+    // link corto de Maps resolvió al centro de la cámara en vez del marcador
+    // preciso, y ese centro coincidió con otra barda cercana): sin esto, la
+    // que se dibuja después tapa por completo a la de abajo — no se ve como
+    // "dos pines pegados", se ve como si solo hubiera uno, y ese resulta ser
+    // el equivocado. Se agrupan sobre TODAS las bardas (no solo las que se
+    // van a dibujar), para que el grupo no cambie según los filtros activos.
+    const gruposPorCoordenada = new Map();
+    for (const b of todas) {
+      if (b.lat == null) continue;
+      const clave = b.lat.toFixed(5) + ',' + b.lng.toFixed(5);
+      if (!gruposPorCoordenada.has(clave)) gruposPorCoordenada.set(clave, []);
+      gruposPorCoordenada.get(clave).push(b);
+    }
+    // Separa en círculo (unos metros) SOLO para dibujar: su ubicación real
+    // (ruta, "Cómo llegar", el corte de Excel) no se toca. El orden dentro
+    // del grupo sale siempre igual (mismo arreglo `todas`), así que el
+    // desplazamiento de cada barda es siempre el mismo, no al azar.
+    function posicionParaDibujar(b) {
+      const clave = b.lat.toFixed(5) + ',' + b.lng.toFixed(5);
+      const grupo = gruposPorCoordenada.get(clave);
+      if (grupo.length <= 1) return [b.lat, b.lng];
+      const i = grupo.findIndex((x) => String(x.id) === String(b.id));
+      const angulo = (2 * Math.PI * i) / grupo.length;
+      const radioMetros = 6;
+      const dLat = (radioMetros * Math.cos(angulo)) / 111320;
+      const dLng = (radioMetros * Math.sin(angulo)) / (111320 * Math.cos((b.lat * Math.PI) / 180));
+      return [b.lat + dLat, b.lng + dLng];
+    }
+
     for (const b of todas) {
       if (b.lat == null) continue;
       const visita = porId.get(String(b.id));
@@ -839,7 +869,7 @@ export default function Bardas() {
         texto = '🔒';
       }
       const buena = esBuena(b.id);
-      pinBarda([b.lat, b.lng], texto, color, colorTexto, buena)
+      pinBarda(posicionParaDibujar(b), texto, color, colorTexto, buena)
         .bindTooltip(
           `<strong>${nombreBarda(b)}</strong><br>${b.colonia || ''}` +
             (buena ? '<br>⭐ Se ve buena' : '') +

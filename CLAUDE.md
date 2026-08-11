@@ -188,6 +188,20 @@ para brigadistas, registro de material repartido.
   con un botón para ocultarlos (src/lib/distritos.js).
 - Tocar una barda (pin del mapa o lista) despliega el panel si estaba plegado
   y baja solo hasta su ficha: antes había que abrirlo y buscarla a mano.
+- Bardas que caen en la MISMA coordenada exacta (ago 2026): pasa seguido con
+  las del Excel (un link corto de Maps resolvió al centro de la cámara en vez
+  del marcador preciso, y coincidió con otra barda cercana) y con las
+  agregadas desde el teléfono (el GPS dio la misma lectura para varias
+  capturadas seguidas en el mismo lugar). Sin arreglo, la que se dibuja
+  después tapa por completo a la de abajo: no se ve como "dos pines
+  pegados", se ve como si solo hubiera uno, y ese pin resulta ser el
+  equivocado — se puede confundir con que la barda "no está" o con el estado
+  de otra. `posicionParaDibujar` en Bardas.jsx agrupa por coordenada
+  (redondeada a 5 decimales) y separa en círculo (~6 m) SOLO para dibujar;
+  la ubicación real que usan la ruta, "Cómo llegar" y el corte de Excel no
+  cambia. A un zoom muy alejado (toda la ciudad) el desplazamiento vuelve a
+  verse pegado —6 m son menos de un pixel ahí— pero a la distancia real con
+  la que se camina una colonia ya quedan separados y tocables.
 - La ubicación propia se ve SIEMPRE, no solo en recorrido: fuera de ruta el
   GPS corre en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
   notificación permanente ni la entrega nativa del APK, que ahí sería
