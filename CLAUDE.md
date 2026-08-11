@@ -202,6 +202,16 @@ para brigadistas, registro de material repartido.
   cambia. A un zoom muy alejado (toda la ciudad) el desplazamiento vuelve a
   verse pegado —6 m son menos de un pixel ahí— pero a la distancia real con
   la que se camina una colonia ya quedan separados y tocables.
+- Qué teléfono hizo cada cambio (ago 2026): src/lib/dispositivo.js le inventa
+  a cada aparato un código al azar la primera vez (guardado en su
+  localStorage) y viaja en la columna `dispositivo` de bardas_permisos,
+  bardas_nuevas, bardas_calidad y bardas_reservadas cada vez que ese teléfono
+  sube algo. NO es un identificador de hardware — ningún navegador deja leer
+  eso, por privacidad — así que se pierde si borran datos del navegador o
+  reinstalan la app. Sirve para, ante un caso raro como el de las bardas 79 y
+  80 (dos bardas cayendo en la misma coordenada exacta), poder agrupar qué
+  cambios salieron del mismo aparato aunque no haya escrito su nombre de
+  equipo esa vez — antes no había ninguna forma de saberlo.
 - La ubicación propia se ve SIEMPRE, no solo en recorrido: fuera de ruta el
   GPS corre en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
   notificación permanente ni la entrega nativa del APK, que ahí sería

@@ -335,3 +335,16 @@ create policy "todos ven que bardas son buenas"
 -- traían una (se sigue leyendo como respaldo si "fotos" viene vacío).
 
 alter table bardas_nuevas add column if not exists fotos jsonb not null default '[]'::jsonb;
+
+-- ---------------------------------------------------------------------------
+-- Dispositivo que hizo cada cambio (ago 2026): un código al azar que cada
+-- teléfono se inventa una sola vez y guarda en su navegador (src/lib/
+-- dispositivo.js) — NO es un identificador de hardware, eso ningún navegador
+-- lo deja leer. Sirve para, más adelante, poder agrupar varios cambios como
+-- "hechos por el mismo teléfono" aunque no haya escrito su nombre de equipo
+-- esa vez. Se agrega en las cuatro tablas donde el celular escribe algo.
+
+alter table bardas_permisos   add column if not exists dispositivo text;
+alter table bardas_nuevas     add column if not exists dispositivo text;
+alter table bardas_calidad    add column if not exists dispositivo text;
+alter table bardas_reservadas add column if not exists dispositivo text;

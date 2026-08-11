@@ -8,6 +8,8 @@
 // La "anon key" es pública por diseño (va en el navegador); lo que puede
 // hacer está limitado por las políticas de la tabla (ver scripts/esquema-supabase.sql).
 
+import { idDispositivo } from './dispositivo.js';
+
 const SUPABASE_URL = 'https://pxhiafunsxkdmcplwhul.supabase.co';
 const SUPABASE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
@@ -205,6 +207,7 @@ export async function guardarPermisoBarda(p) {
         ...p,
         permiso,
         anulado: false,
+        dispositivo: idDispositivo(),
         actualizado: new Date().toISOString()
       })
     });
@@ -225,7 +228,11 @@ export async function anularPermisoBarda(bardaId) {
       {
         method: 'PATCH',
         headers: { ...cabeceras(), Prefer: 'return=minimal' },
-        body: JSON.stringify({ anulado: true, actualizado: new Date().toISOString() })
+        body: JSON.stringify({
+          anulado: true,
+          dispositivo: idDispositivo(),
+          actualizado: new Date().toISOString()
+        })
       }
     );
     return res.ok;
@@ -277,7 +284,7 @@ export async function actualizarBardaNueva(id, cambios) {
       {
         method: 'PATCH',
         headers: { ...cabeceras(), Prefer: 'return=minimal' },
-        body: JSON.stringify(cambios)
+        body: JSON.stringify({ ...cambios, dispositivo: idDispositivo() })
       }
     );
     return res.ok;
@@ -298,7 +305,7 @@ export async function guardarBardaNueva(fila) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/bardas_nuevas`, {
       method: 'POST',
       headers: { ...cabeceras(), Prefer: 'return=minimal' },
-      body: JSON.stringify(fila)
+      body: JSON.stringify({ ...fila, dispositivo: idDispositivo() })
     });
     return res.ok;
   } catch {
@@ -339,6 +346,7 @@ export async function marcarCalidadBarda(bardaId, buena, equipo) {
         barda_id: String(bardaId),
         buena,
         equipo: equipo || null,
+        dispositivo: idDispositivo(),
         actualizado: new Date().toISOString()
       })
     });
@@ -384,6 +392,7 @@ export async function apartarBarda(bardaId, equipo) {
       body: JSON.stringify({
         barda_id: String(bardaId),
         equipo: equipo || null,
+        dispositivo: idDispositivo(),
         vence: SIN_VENCIMIENTO
       })
     });
@@ -403,7 +412,7 @@ export async function liberarReservasBardas(ids) {
     await fetch(`${SUPABASE_URL}/rest/v1/bardas_reservadas?barda_id=in.(${encodeURIComponent(lista)})`, {
       method: 'PATCH',
       headers: { ...cabeceras(), Prefer: 'return=minimal' },
-      body: JSON.stringify({ vence: new Date().toISOString() })
+      body: JSON.stringify({ vence: new Date().toISOString(), dispositivo: idDispositivo() })
     });
   } catch {
     /* si falla, la reserva vence sola en RESERVA_MINUTOS */
