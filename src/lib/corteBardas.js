@@ -38,6 +38,12 @@ function urlUbicacion(b) {
   return `https://www.google.com/maps/search/?api=1&query=${b.lat},${b.lng}`;
 }
 
+// La oficina pide el corte en mayúsculas. Ojo: la columna REFERENCIAS es un
+// link (p. ej. maps.app.goo.gl/EynvjocPrLTuzn5f7) y esos códigos distinguen
+// mayúsculas de minúsculas — ponerlo en mayúsculas rompería el link. Por eso
+// esa columna se arma aparte, sin pasar por esta función.
+const mayus = (v) => String(v || '').toUpperCase();
+
 const fechaBonita = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -102,21 +108,21 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
     const estado = estadoDe(p);
     if (!pasaElFiltro(estado, filtro)) continue;
     filas.push([
-      p?.equipo || '',
-      b.brigada || '',
-      p?.nombre || '',
-      p?.telefono || '',
-      b.direccion || '',
-      b.colonia || '',
-      b.distrito || '',
-      urlUbicacion(b),
-      statusDe(estado),
-      p?.notas || '',
+      mayus(p?.equipo),
+      mayus(b.brigada),
+      mayus(p?.nombre),
+      mayus(p?.telefono),
+      mayus(b.direccion),
+      mayus(b.colonia),
+      mayus(b.distrito),
+      urlUbicacion(b), // sin mayus: es un link, distingue mayúsculas/minúsculas
+      mayus(statusDe(estado)),
+      mayus(p?.notas),
       '', // BRIGADA QUE ASISTE: la asigna la oficina después
       '', // FECHA DE PROGRAMACION: la agenda la oficina después
-      buenasPorId.has(String(b.id)) ? 'Sí' : '',
-      p?.a_cambio || '',
-      fechaBonita(p?.actualizado)
+      buenasPorId.has(String(b.id)) ? 'SÍ' : '',
+      mayus(p?.a_cambio),
+      mayus(fechaBonita(p?.actualizado)) // no cambia (son solo números y /)
     ]);
   }
   return filas;

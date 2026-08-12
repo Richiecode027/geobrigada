@@ -151,7 +151,9 @@ para brigadistas, registro de material repartido.
   ubicación en blanco en el corte, así que ahí se arma un link a partir de
   su lat/lng. `xlsx` es dependencia de runtime pero queda en su propio
   chunk: solo se descarga al tocar el botón, nunca en la app del
-  brigadista.
+  brigadista. Todo el corte sale en MAYÚSCULAS (lo pide la oficina así),
+  salvo la columna REFERENCIAS: es un link (los códigos cortos de Maps
+  distinguen mayúsculas de minúsculas) y ponerlo en mayúsculas lo rompería.
 - Al agregar una barda nueva, src/lib/ubicacion.js llena solos colonia,
   distrito y calle desde la ubicación. La COLONIA sale del catálogo INEGI que
   ya trae la app (local, sin internet); la CALLE de Nominatim; el DISTRITO del
