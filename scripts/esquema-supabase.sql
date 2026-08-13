@@ -348,3 +348,46 @@ alter table bardas_permisos   add column if not exists dispositivo text;
 alter table bardas_nuevas     add column if not exists dispositivo text;
 alter table bardas_calidad    add column if not exists dispositivo text;
 alter table bardas_reservadas add column if not exists dispositivo text;
+
+-- ---------------------------------------------------------------------------
+-- Fecha del PRIMER registro de una barda (ago 2026): antes, cada vez que se
+-- corregía el resultado de una visita, "actualizado" se movía a la hora de
+-- la corrección — y el corte de Excel perdía el rastro de cuándo se visitó
+-- de verdad la primera vez, que es lo que importa para llevar control de
+-- qué bardas se visitan.
+--
+-- "primer_registro" se llena solo la PRIMERA vez que se guarda una barda; un
+-- disparador (trigger) impide que se toque después, sin importar qué mande
+-- el código del teléfono — así queda garantizado aunque cambie el código
+-- cliente en el futuro. "actualizado" se sigue moviendo con cada edición,
+-- para lo que ya se usaba (orden de lectura); el corte ahora lee de
+-- "primer_registro", no de "actualizado".
+
+alter table bardas_permisos add column if not exists primer_registro timestamptz;
+
+-- A las filas que ya existían no les toca un "primer registro" real: se usa
+-- su "actualizado" de hoy como mejor aproximación disponible, en vez de
+-- dejarlas sin fecha en el corte. Solo toca filas que aún no lo tengan, así
+-- que correr esto de nuevo no vuelve a pisar nada.
+update bardas_permisos
+   set primer_registro = actualizado
+ where primer_registro is null;
+
+create or replace function conservar_primer_registro()
+returns trigger
+language plpgsql
+as $$
+begin
+  if TG_OP = 'UPDATE' then
+    new.primer_registro := old.primer_registro;
+  else
+    new.primer_registro := now();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists bardas_permisos_primer_registro on bardas_permisos;
+create trigger bardas_permisos_primer_registro
+  before insert or update on bardas_permisos
+  for each row execute function conservar_primer_registro();

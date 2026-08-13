@@ -134,6 +134,15 @@ para brigadistas, registro de material repartido.
   antes `visitado` volvía sola a pendientes al día siguiente, pero eso
   confundía al equipo cuando la veía "perdida" — ahora se queda así hasta que
   alguien la reabra y cambie el resultado a mano.
+- La fecha del corte (columna REGISTRADO) es la del PRIMER registro, no la de
+  la última corrección: importa para llevar control de cuándo se visitó
+  cada barda de verdad. `bardas_permisos.primer_registro` se llena una sola
+  vez; un trigger en Supabase (no el código del teléfono) impide que se
+  toque después, sin importar qué mande el cliente — garantizado aunque
+  cambie el código en el futuro. `actualizado` se sigue moviendo con cada
+  edición, para lo que ya se usaba (orden de lectura); el corte lee de
+  `primer_registro`, con `actualizado` como respaldo si esa columna aún no
+  existe en la base.
 - Corte para la oficina: botón "Exportar corte a Excel" en la vista Bardas
   (src/lib/corteBardas.js), con filtro Todas / Solo visitadas / Solo con
   permiso. Las columnas y su orden son EXACTO el archivo que ya usa la

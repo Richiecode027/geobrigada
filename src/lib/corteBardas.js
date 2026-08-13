@@ -122,7 +122,15 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
       '', // FECHA DE PROGRAMACION: la agenda la oficina después
       buenasPorId.has(String(b.id)) ? 'SÍ' : '',
       mayus(p?.a_cambio),
-      mayus(fechaBonita(p?.actualizado)) // no cambia (son solo números y /)
+      // Del PRIMER registro, no de la última corrección — así el corte
+      // sirve para llevar control de cuándo se visitó cada barda de verdad,
+      // sin que una corrección posterior mueva la fecha. Ver primer_registro
+      // en scripts/esquema-supabase.sql: un trigger garantiza que nunca se
+      // actualiza después de la primera vez, pase lo que pase en el cliente.
+      // Respaldo a "actualizado" por si la columna primer_registro todavía
+      // no existe en la base (falta correr el SQL nuevo): así el corte no se
+      // queda sin fecha mientras tanto.
+      mayus(fechaBonita(p?.primer_registro ?? p?.actualizado)) // no cambia (son solo números y /)
     ]);
   }
   return filas;
