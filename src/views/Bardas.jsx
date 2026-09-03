@@ -170,6 +170,10 @@ export default function Bardas() {
   const capaColoniaVista = useRef(null);
   const capaLineaDirecta = useRef(null);
   const detenerGPS = useRef(null);
+  // Los dos <input type="file"> del selector de fotos van ocultos: cada botón
+  // visible (Cámara / Galería) solo les hace click por debajo.
+  const inputCamaraRef = useRef(null);
+  const inputGaleriaRef = useRef(null);
   const yaCalculada = useRef(false);
 
   const [todas, setTodas] = useState([]);
@@ -568,6 +572,19 @@ export default function Bardas() {
   // dejar memoria colgada al cerrar o cambiar de formulario.
   function liberarPreviews(fotos) {
     for (const f of fotos) if (f.tipo === 'nueva') URL.revokeObjectURL(f.previewUrl);
+  }
+
+  // Comparten esta función los dos <input type="file"> (Cámara y Galería):
+  // agregan lo elegido a lo que ya traía el formulario, no lo reemplazan.
+  function agregarFotosElegidas(archivos) {
+    const elegidos = Array.from(archivos || []);
+    if (!elegidos.length) return;
+    const nuevas = elegidos.map((archivo) => ({
+      tipo: 'nueva',
+      archivo,
+      previewUrl: URL.createObjectURL(archivo)
+    }));
+    setFormNueva((f) => ({ ...f, fotos: [...f.fotos, ...nuevas] }));
   }
 
   function abrirAgregar() {
@@ -1590,22 +1607,51 @@ export default function Bardas() {
                 )}
 
                 <label className="etiqueta">Fotos (opcional, se pueden agregar varias)</label>
+                {/* Dos <input> separados: uno fuerza la cámara (capture), el
+                    otro abre la galería (sin capture). Un solo <input> sin
+                    capture debería enseñar las dos opciones, pero en la
+                    práctica varios celulares (sobre todo Android) se van
+                    derecho a una sola sin preguntar — con dos botones ya no
+                    depende de adivinar qué hace el navegador. */}
                 <input
+                  ref={inputCamaraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    agregarFotosElegidas(e.target.files);
+                    e.target.value = ''; // para poder tomar otra igual después
+                  }}
+                />
+                <input
+                  ref={inputGaleriaRef}
                   type="file"
                   accept="image/*"
                   multiple
+                  hidden
                   onChange={(e) => {
-                    const elegidos = Array.from(e.target.files || []);
-                    if (!elegidos.length) return;
-                    const nuevas = elegidos.map((archivo) => ({
-                      tipo: 'nueva',
-                      archivo,
-                      previewUrl: URL.createObjectURL(archivo)
-                    }));
-                    setFormNueva((f) => ({ ...f, fotos: [...f.fotos, ...nuevas] }));
+                    agregarFotosElegidas(e.target.files);
                     e.target.value = ''; // para poder elegir el mismo archivo otra vez si se quita
                   }}
                 />
+                <div className="fila">
+                  <button
+                    type="button"
+                    className="boton suave mini"
+                    onClick={() => inputCamaraRef.current?.click()}
+                  >
+                    📷 Tomar foto
+                  </button>
+                  <button
+                    type="button"
+                    className="boton suave mini"
+                    onClick={() => inputGaleriaRef.current?.click()}
+                  >
+                    🖼️ Elegir de galería
+                  </button>
+                </div>
                 {formNueva.fotos.length > 0 && (
                   <div className="galeria-miniaturas">
                     {formNueva.fotos.map((f, i) => (

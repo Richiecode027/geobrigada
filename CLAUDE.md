@@ -257,11 +257,13 @@ para brigadistas, registro de material repartido.
   que ya estaban antes de que se pudiera subir más de una. La ficha las
   enseña en una franja que se desliza con el dedo (`scroll-snap` de CSS, no
   JS propio de arrastre — para no repetir el bug de eventos táctiles pasivos
-  de AsaPanel). El `<input type="file">` NO lleva `capture="environment"`:
-  con ese atributo, la mayoría de los celulares (sobre todo Android) abren la
-  cámara directo y ni siquiera enseñan la opción de elegir de la galería —
-  lo cual también impedía agregarle foto después a una barda que se guardó
-  sin ninguna, porque para entonces el equipo ya no está parado ahí.
+  de AsaPanel). Son DOS botones, "📷 Tomar foto" y "🖼️ Elegir de galería",
+  cada uno con su propio `<input type="file">` oculto (uno con
+  `capture="environment"`, el otro sin ese atributo): un solo `<input>` sin
+  capture debería dejar elegir entre las dos opciones, pero en la práctica
+  varios celulares (sobre todo Android) se van derecho a una sola sin
+  preguntar — a veces cámara, a veces galería, según el navegador — así que
+  ya no depende de adivinar qué hace cada uno.
 - Ver una colonia en el mapa (ago 2026): mantener presionado un punto dibuja
   su polígono y nombre (`map.on('contextmenu', …)`, que dispara igual con
   long-press en el teléfono y clic derecho en computadora — sin temporizador
