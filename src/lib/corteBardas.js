@@ -77,6 +77,15 @@ const ENCABEZADOS = [
 // arrastrar 15 columnas a mano antes de poder leer el corte).
 const ANCHOS = [16, 8, 20, 14, 34, 22, 9, 40, 22, 30, 18, 20, 7, 22, 18];
 
+// En qué orden salen las filas del corte:
+//   'reciente-primero' → por fecha de primer registro, las más recientes
+//                        arriba y las más viejas abajo (pendientes al final).
+//   'original'         → el orden de antes: catálogo del Excel en su orden y
+//                        luego las agregadas desde el teléfono.
+// ROLLBACK: si el orden nuevo estorba, basta cambiar esta línea a 'original'
+// (y publicar); no hace falta tocar nada más.
+const ORDEN_DEL_CORTE = 'reciente-primero';
+
 // Qué bardas entran en el corte.
 export const FILTROS = [
   { id: 'todo', etiqueta: 'Todas' },
@@ -102,12 +111,13 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
     (calidad || []).filter((c) => c.buena).map((c) => String(c.barda_id))
   );
 
-  const filas = [];
+  const filas = []; // { fila, fecha } — la fecha solo sirve para ordenar
   for (const b of bardas) {
     const p = porId.get(String(b.id));
     const estado = estadoDe(p);
     if (!pasaElFiltro(estado, filtro)) continue;
-    filas.push([
+    const fecha = new Date(p?.primer_registro ?? p?.actualizado ?? NaN).getTime();
+    filas.push({ fecha: Number.isNaN(fecha) ? null : fecha, fila: [
       mayus(p?.equipo),
       mayus(b.brigada),
       mayus(p?.nombre),
@@ -131,9 +141,22 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
       // no existe en la base (falta correr el SQL nuevo): así el corte no se
       // queda sin fecha mientras tanto.
       mayus(fechaBonita(p?.primer_registro ?? p?.actualizado)) // no cambia (son solo números y /)
-    ]);
+    ] });
   }
-  return filas;
+
+  if (ORDEN_DEL_CORTE === 'reciente-primero') {
+    // Más recientes arriba, más viejas abajo; las que no tienen fecha
+    // (pendientes) al final de todo. sort() es estable: las que empatan —por
+    // ejemplo las cargadas de golpe del Excel de autorizadas, con la misma
+    // hora— conservan el orden que ya traían.
+    filas.sort((a, b) => {
+      if (a.fecha === b.fecha) return 0;
+      if (a.fecha === null) return 1;
+      if (b.fecha === null) return -1;
+      return b.fecha - a.fecha;
+    });
+  }
+  return filas.map((f) => f.fila);
 }
 
 export async function descargarCorteBardas(bardas, permisos, filtro = 'todo', calidad = []) {
