@@ -44,15 +44,14 @@ function urlUbicacion(b) {
 // esa columna se arma aparte, sin pasar por esta función.
 const mayus = (v) => String(v || '').toUpperCase();
 
-const fechaBonita = (iso) => {
+// La fecha va como FECHA REAL de Excel (no como texto "03/09/2026 21:15"):
+// con texto, el filtro de la columna no ofrece filtrar por fechas. Se muestra
+// con el formato FORMATO_FECHA; sin fecha (pendientes) la celda queda vacía.
+const FORMATO_FECHA = 'dd/mm/yyyy hh:mm';
+const fechaExcel = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const dosDigitos = (n) => String(n).padStart(2, '0');
-  return (
-    `${dosDigitos(d.getDate())}/${dosDigitos(d.getMonth() + 1)}/${d.getFullYear()} ` +
-    `${dosDigitos(d.getHours())}:${dosDigitos(d.getMinutes())}`
-  );
+  return Number.isNaN(d.getTime()) ? '' : d;
 };
 
 const ENCABEZADOS = [
@@ -140,7 +139,7 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
       // Respaldo a "actualizado" por si la columna primer_registro todavía
       // no existe en la base (falta correr el SQL nuevo): así el corte no se
       // queda sin fecha mientras tanto.
-      mayus(fechaBonita(p?.primer_registro ?? p?.actualizado)) // no cambia (son solo números y /)
+      fechaExcel(p?.primer_registro ?? p?.actualizado)
     ] });
   }
 
@@ -161,7 +160,18 @@ export function filasDeCorte(bardas, permisos, filtro = 'todo', calidad = []) {
 
 export async function descargarCorteBardas(bardas, permisos, filtro = 'todo', calidad = []) {
   const XLSX = await import('xlsx');
-  const hoja = XLSX.utils.aoa_to_sheet([ENCABEZADOS, ...filasDeCorte(bardas, permisos, filtro, calidad)]);
+  const hoja = XLSX.utils.aoa_to_sheet(
+    [ENCABEZADOS, ...filasDeCorte(bardas, permisos, filtro, calidad)],
+    { cellDates: true }
+  );
+  // Que las fechas se vean como día/mes/año hora:minuto (si no, Excel las
+  // enseña en su formato por omisión, que cambia según el idioma de la PC).
+  const colFecha = ENCABEZADOS.indexOf('REGISTRADO');
+  const rango = XLSX.utils.decode_range(hoja['!ref']);
+  for (let r = 1; r <= rango.e.r; r++) {
+    const celda = hoja[XLSX.utils.encode_cell({ r, c: colFecha })];
+    if (celda && celda.t === 'd') celda.z = FORMATO_FECHA;
+  }
   hoja['!cols'] = ANCHOS.map((wch) => ({ wch }));
   hoja['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: ENCABEZADOS.length - 1 } }) };
   hoja['!freeze'] = { xSplit: 0, ySplit: 1 };

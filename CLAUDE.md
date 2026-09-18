@@ -163,6 +163,11 @@ para brigadistas, registro de material repartido.
   brigadista. Todo el corte sale en MAYÚSCULAS (lo pide la oficina así),
   salvo la columna REFERENCIAS: es un link (los códigos cortos de Maps
   distinguen mayúsculas de minúsculas) y ponerlo en mayúsculas lo rompería.
+  Las filas salen ordenadas por fecha de primer registro, las más recientes
+  arriba y las pendientes (sin fecha) al final; rollback = ORDEN_DEL_CORTE
+  'original' en corteBardas.js. REGISTRADO va como FECHA REAL de Excel
+  (formato dd/mm/yyyy hh:mm), no como texto: con texto el filtro de la
+  columna no deja filtrar por fechas.
 - Al agregar una barda nueva, src/lib/ubicacion.js llena solos colonia,
   distrito y calle desde la ubicación. La COLONIA sale del catálogo INEGI que
   ya trae la app (local, sin internet); la CALLE de Nominatim; el DISTRITO del
