@@ -25,6 +25,7 @@ import {
 } from '../lib/nube.js';
 import { compartirGPX } from '../lib/gpx.js';
 import { iniciarGPS, esApk } from '../lib/gps.js';
+import { useMiUbicacion } from '../components/useMiUbicacion.js';
 
 // Un punto de la ruta cuenta como recorrido si el GPS pasó a menos de esto.
 const RADIO_CUBIERTO_M = 30;
@@ -165,9 +166,11 @@ function avanzar(a, b, metros) {
 export default function Brigadista({ params }) {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef, { rotar: true });
+  // "Aquí estás tú": mismo marcador que en todos los mapas. Esta vista ya trae
+  // su propio GPS (con rastro y modo de recorrido), así que le pasa cada lectura.
+  const yo = useMiUbicacion(map, { gpsPropio: false });
   const capaRuta = useRef(null);
   const capaProgreso = useRef(null);
-  const capaGps = useRef(null);
   const capaTrack = useRef(null);
   const detenerGps = useRef(null); // función que apaga la fuente de GPS activa
   const track = useRef([]);
@@ -314,6 +317,8 @@ export default function Brigadista({ params }) {
 
   // --- cámara según el modo: 'territorio' encuadra toda la zona; 'ruta' es la
   //     vista guiada que te sigue (acercada y, al caminar, rotando como Waze).
+  //     Es la ÚNICA vista de la app donde el mapa gira; en las demás el norte
+  //     queda siempre arriba y solo gira la flecha de "aquí estás".
   useEffect(() => {
     modoVistaRef.current = modoVista;
     if (!map || !miRuta) return;
@@ -598,11 +603,7 @@ export default function Brigadista({ params }) {
         if (!map) return;
         // En vista guiada, la cámara te sigue y rota hacia donde caminas.
         if (modoVistaRef.current === 'ruta') seguirCamara(p);
-        if (capaGps.current) capaGps.current.remove();
-        const g = L.layerGroup().addTo(map);
-        L.circle(p, { radius: punto.precision, color: '#1d6fd1', weight: 1, fillOpacity: 0.1 }).addTo(g);
-        L.circleMarker(p, { radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1 }).addTo(g);
-        capaGps.current = g;
+        yo.actualizar(p, punto.precision);
         if (seMovio) dibujarTrack();
       },
       (mensaje) => {

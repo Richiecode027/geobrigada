@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
+import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { buscarColonias, ringsPorClave, todasLasColonias } from '../lib/colonias.js';
 import { repartir, resumenBrigadas, vivColonia, capacidadDe } from '../lib/brigadas.js';
 import { TEAM_COLORS } from '../lib/partition.js';
@@ -22,6 +23,7 @@ const colorBrigada = (i) => TEAM_COLORS[i % TEAM_COLORS.length];
 export default function Brigadas({ onPlanear }) {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef);
+  useMiUbicacion(map); // "aquí estás tú", igual en todos los mapas
   const capa = useRef(null);
 
   const plan = cargarPlan();

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
+import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { cargarReportes, borrarReporte, importarReportes } from '../lib/storage.js';
 import { nubeConfigurada, cargarReportesNube, subirPendientes } from '../lib/nube.js';
 import { ringsPorClave } from '../lib/colonias.js';
@@ -14,6 +15,7 @@ import { compartirGPX } from '../lib/gpx.js';
 export default function Historial() {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef);
+  useMiUbicacion(map); // "aquí estás tú", igual en todos los mapas
   const capa = useRef(null);
   const fileRef = useRef(null);
 

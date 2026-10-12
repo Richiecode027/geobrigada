@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
+import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { cargarReportes } from '../lib/storage.js';
 import { nubeConfigurada, cargarReportesNube } from '../lib/nube.js';
 import { ringsPorClave, coloniaPorClave } from '../lib/colonias.js';
@@ -57,6 +58,7 @@ function agrupar(reportes) {
 export default function Cobertura() {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef);
+  useMiUbicacion(map); // "aquí estás tú", igual en todos los mapas
   const capaPoligonos = useRef(null);
   const capaDetalle = useRef(null);
 

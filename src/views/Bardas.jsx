@@ -8,7 +8,7 @@ import { registrarAtras } from '../lib/atras.js';
 import { comprimirImagen } from '../lib/imagen.js';
 import { coordsDeLinkMaps } from '../lib/mapsLink.js';
 import { ubicacionAproximada } from '../lib/ubicacion.js';
-import { seguirBrujula, pedirPermisoBrujula } from '../lib/brujula.js';
+import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { cargarDistritos, COLOR_DISTRITO } from '../lib/distritos.js';
 import { buscarColonias, ringsPorClave, coloniaEnPunto } from '../lib/colonias.js';
 // Solo las etiquetas y la función: la librería pesada (xlsx) se carga dentro
@@ -166,7 +166,6 @@ export default function Bardas() {
   const panelRef = useRef(null);
   const map = useMap(mapaRef);
   const capaBardas = useRef(null);
-  const capaYo = useRef(null);
   const capaDistritos = useRef(null);
   const capaColoniaVista = useRef(null);
   const capaLineaDirecta = useRef(null);
@@ -182,8 +181,7 @@ export default function Bardas() {
   const [reservas, setReservas] = useState([]);
   const [calidad, setCalidad] = useState([]);
   const [miPos, setMiPos] = useState(null);
-  // Grados a los que mira el teléfono (null si no tiene brújula).
-  const [rumbo, setRumbo] = useState(null);
+  const [miPrecision, setMiPrecision] = useState(null);
   // Apagado por omisión: dibujar los 4 polígonos encima de ~250 pines se
   // siente pesado en el teléfono, y para caminar no hacen falta. Quien los
   // necesite los prende.
@@ -441,26 +439,13 @@ export default function Bardas() {
     };
   }, [fase]);
 
-  // Hacia dónde apunta el teléfono, para girar la flecha del mapa.
-  useEffect(() => {
-    let dejarDeSeguir = () => {};
-    let vivo = true;
-    pedirPermisoBrujula().then((ok) => {
-      if (!vivo || !ok) return;
-      dejarDeSeguir = seguirBrujula(setRumbo);
-    });
-    return () => {
-      vivo = false;
-      dejarDeSeguir();
-    };
-  }, []);
-
   function arrancarGPS({ segundoPlano = true } = {}) {
     if (detenerGPS.current) detenerGPS.current();
     detenerGPS.current = iniciarGPS(
       'bardas',
       (p) => {
         setMiPos([p.lat, p.lng]);
+        setMiPrecision(p.precision);
         setGpsError('');
       },
       (msg) => {
@@ -1072,44 +1057,11 @@ export default function Bardas() {
     setColoniaVista({ nombre: r.n, rings, censo: r });
   }
 
-  // Dónde estás y hacia dónde ves. Con brújula sale una flecha que gira con el
-  // teléfono (caminando en una colonia desconocida, "hacia dónde voy" importa
-  // más que "dónde estoy"); sin brújula, el punto de siempre.
-  //
-  // Va con interactive:false a propósito: si no, al estar parado JUNTO a una
-  // barda —que es lo normal al acabar de registrarla— la flecha tapaba el pin
-  // y los toques se los quedaba ella. Así los dedos pasan de largo hasta la
-  // barda de abajo. Se pierde el globito de "aquí estás tú", que igual no
-  // hacía falta explicar.
-  useEffect(() => {
-    if (!map || !miPos) return;
-    if (capaYo.current) capaYo.current.remove();
-    const g = L.layerGroup().addTo(map);
-    if (rumbo == null) {
-      L.circleMarker(miPos, {
-        radius: 8, color: '#fff', weight: 2, fillColor: '#1d6fd1', fillOpacity: 1,
-        interactive: false
-      }).addTo(g);
-    } else {
-      L.marker(miPos, {
-        zIndexOffset: 1000,
-        interactive: false,
-        keyboard: false,
-        icon: L.divIcon({
-          className: 'flecha-yo',
-          html:
-            `<div style="transform:rotate(${rumbo}deg)">` +
-            '<svg viewBox="0 0 36 36" width="36" height="36">' +
-            '<circle cx="18" cy="18" r="11" fill="#1d6fd1" fill-opacity="0.22"/>' +
-            '<path d="M18 4 L26 25 L18 20 L10 25 Z" fill="#1d6fd1" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>' +
-            '</svg></div>',
-          iconSize: [36, 36],
-          iconAnchor: [18, 18]
-        })
-      }).addTo(g);
-    }
-    capaYo.current = g;
-  }, [map, miPos, rumbo]);
+  // Dónde estás y hacia dónde ves o caminas: el mismo marcador de todos los
+  // mapas (src/components/useMiUbicacion.js), con la posición del GPS de esta
+  // vista — que no se duplica: Bardas ya trae el suyo, en modo ligero o de
+  // recorrido según la fase.
+  useMiUbicacion(map, { posicion: miPos, precision: miPrecision });
 
   // Al abrir, en cuanto llega la primera ubicación el mapa se va ahí. Antes
   // arrancaba mostrando todo Morelia y había que buscarse a uno mismo entre

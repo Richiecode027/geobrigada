@@ -238,16 +238,25 @@ para brigadistas, registro de material repartido.
   80 (dos bardas cayendo en la misma coordenada exacta), poder agrupar qué
   cambios salieron del mismo aparato aunque no haya escrito su nombre de
   equipo esa vez — antes no había ninguna forma de saberlo.
-- La ubicación propia se ve SIEMPRE, no solo en recorrido: fuera de ruta el
-  GPS corre en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
-  notificación permanente ni la entrega nativa del APK, que ahí sería
-  abusiva). El puntito es una flecha que gira con la brújula
+- "Aquí estás tú" (oct 2026): UN solo marcador para todos los mapas,
+  src/components/useMiUbicacion.js. Es una flecha que gira con la brújula
   (src/lib/brujula.js: webkitCompassHeading en iOS, deviceorientationabsolute
-  en Android, descontando el giro de pantalla); si el aparato no tiene
-  brújula, se dibuja el punto de antes. Es un marcador NO interactivo
-  (interactive:false + pointer-events:none en CSS): antes se quedaba con los
-  toques cuando el equipo estaba parado justo junto a una barda recién
-  registrada —el caso más común— y no dejaba abrirla.
+  en Android, descontando el giro de pantalla); sin brújula apunta hacia donde
+  vas CAMINANDO (rumbo entre lecturas del GPS separadas ≥8 m, para no hacer
+  caso al temblor del GPS estando parado); sin ninguno de los dos, punto azul.
+  Aparece SOLO, sin botón: en vistas sin GPS propio (Planear, En vivo,
+  Cobertura, Historial, Brigadas) el hook prende el GPS en modo ligero; Bardas
+  le pasa su posición y Brigadista cada lectura (actualizar()). El permiso de
+  brújula en iPhone (y algunos Chrome) solo se puede pedir con un toque: se
+  reintenta en el primer toque a la pantalla. El MAPA NO GIRA en ninguna vista
+  — solo la flecha — con UNA excepción a propósito: la vista guiada del link
+  del brigadista (modo 'ruta' en Brigadista.jsx, leaflet-rotate), que gira el
+  mapa hacia donde camina; ahí la flecha descuenta el giro del mapa. Es un
+  marcador NO interactivo (interactive:false + pointer-events:none): antes se
+  quedaba con los toques cuando el equipo estaba parado junto a una barda
+  recién registrada y no dejaba abrirla. Fuera de recorrido, Bardas corre el
+  GPS en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
+  notificación permanente ni la entrega nativa del APK, que ahí sería abusiva).
 - App abre en la pestaña Bardas (App.jsx), no en Planear: es la actividad del
   momento. El mapa además se centra solo en la ubicación del equipo en cuanto
   llega la primera lectura de GPS (una vez, no vuelve a moverlo solo después):

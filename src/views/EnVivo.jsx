@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap, marcadorInicio } from '../components/useMap.js';
+import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { TEAM_COLORS } from '../lib/partition.js';
 import { nubeConfigurada, cargarPosiciones } from '../lib/nube.js';
 
@@ -17,6 +18,7 @@ function haceCuanto(iso) {
 export default function EnVivo() {
   const mapaRef = useRef(null);
   const map = useMap(mapaRef);
+  useMiUbicacion(map); // "aquí estás tú", igual en todos los mapas
   const capa = useRef(null);
   const encuadrado = useRef(false);
 
