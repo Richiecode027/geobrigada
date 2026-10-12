@@ -487,13 +487,6 @@ export default function Coordinador({ contexto }) {
             <div className="fila">
               <strong style={{ flex: 1 }}>{colonia.nombre}</strong>
             </div>
-            {colonia.viviendas > 0 && (
-              <div className="aviso" style={{ background: '#eef6ff', borderColor: '#bcd9f5' }}>
-                🏠 Esta colonia tiene <strong>≈ {colonia.viviendas} viviendas</strong>{' '}
-                habitadas (INEGI 2020). Lleva al menos esa cantidad de{' '}
-                {nombreActividad.toLowerCase()} para no quedarte corto.
-              </div>
-            )}
             <DatosCenso c={colonia.censo} />
             <label className="etiqueta">Actividad</label>
             <div className="fila">
