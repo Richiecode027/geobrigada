@@ -14,6 +14,7 @@ import { buscarColonias, ringsPorClave, coloniaEnPunto } from '../lib/colonias.j
 // Solo las etiquetas y la función: la librería pesada (xlsx) se carga dentro
 // de descargarCorteBardas, hasta que alguien toca el botón.
 import { FILTROS as FILTROS_CORTE, descargarCorteBardas } from '../lib/corteBardas.js';
+import { descargarRespaldoDatos, descargarRespaldoFotos } from '../lib/respaldo.js';
 import {
   cargarBardas,
   bardasPendientes,
@@ -240,6 +241,8 @@ export default function Bardas() {
   });
   const [guardando, setGuardando] = useState(false);
   const [exportando, setExportando] = useState(false);
+  const [respaldando, setRespaldando] = useState(null); // null | 'datos' | 'fotos'
+  const [avisoRespaldo, setAvisoRespaldo] = useState('');
   const [filtroCorte, setFiltroCorte] = useState('todo');
 
   // Agregar una barda que no está en el catálogo (la encontró el equipo en la calle).
@@ -1150,9 +1153,9 @@ export default function Bardas() {
   //     equipo, sin vencimiento.
   //   · sin resultado y sin nombre -> se suelta y vuelve a estar libre.
   async function guardar() {
-    if (!registrando || !form.estado) return;
-    const id = String(registrando.id);
     const nombreEquipo = form.equipo.trim();
+    if (!registrando || !form.estado || !nombreEquipo) return;
+    const id = String(registrando.id);
     setGuardando(true);
 
     const fila = {
@@ -1172,7 +1175,17 @@ export default function Bardas() {
       setError('No se pudo guardar en la nube (¿sin señal?). Intenta de nuevo.');
       return;
     }
-    const guardada = { ...fila, anulado: false, actualizado: new Date().toISOString() };
+    const ahora = new Date().toISOString();
+    const anterior = permisos.find((x) => String(x.barda_id) === id);
+    // primer_registro no se mueve al corregir (en la base lo garantiza un
+    // trigger); aquí se conserva también en memoria, si no el corte
+    // exportado en esta misma sesión saldría con la fecha de la corrección.
+    const guardada = {
+      ...fila,
+      anulado: false,
+      actualizado: ahora,
+      primer_registro: anterior?.primer_registro ?? ahora
+    };
     setPermisos((p) => [...p.filter((x) => String(x.barda_id) !== id), guardada]);
     // Sale de la ruta de hoy; el resto conserva su orden (no se recalcula sola
     // para no cambiarle el camino al equipo a media jornada).
@@ -1209,6 +1222,41 @@ export default function Bardas() {
       setError('No se pudo armar el Excel del corte. (' + e.message + ')');
     }
     setExportando(false);
+  }
+
+  // --- respaldo descargable (src/lib/respaldo.js) ---------------------------
+  async function respaldarDatos() {
+    setRespaldando('datos');
+    setAvisoRespaldo('');
+    try {
+      const { nombre, resumen, errores } = await descargarRespaldoDatos();
+      const filas = Object.values(resumen).reduce((a, n) => a + n, 0);
+      const fallas = Object.keys(errores);
+      setAvisoRespaldo(
+        `✅ Se bajó "${nombre}" con ${filas.toLocaleString('es-MX')} registros.` +
+          (fallas.length ? ` ⚠ No se pudo leer: ${fallas.join(', ')}.` : '')
+      );
+    } catch (e) {
+      setAvisoRespaldo('⚠ No se pudo armar el respaldo (' + e.message + '). Revisa tu señal e intenta de nuevo.');
+    }
+    setRespaldando(null);
+  }
+
+  async function respaldarFotos() {
+    setRespaldando('fotos');
+    setAvisoRespaldo('Buscando las fotos de la nube…');
+    try {
+      const { nombre, total, fallidas } = await descargarRespaldoFotos((hechas, de) =>
+        setAvisoRespaldo(`Bajando fotos: ${hechas} de ${de}…`)
+      );
+      setAvisoRespaldo(
+        `✅ Se bajó "${nombre}" con ${total - fallidas.length} de ${total} fotos.` +
+          (fallidas.length ? ` ⚠ ${fallidas.length} no se pudieron bajar; vuelve a intentarlo.` : '')
+      );
+    } catch (e) {
+      setAvisoRespaldo('⚠ No se pudieron bajar las fotos (' + e.message + '). Revisa tu señal e intenta de nuevo.');
+    }
+    setRespaldando(null);
   }
 
   function comoLlegar(b) {
@@ -1743,6 +1791,21 @@ export default function Bardas() {
                 {exportando ? 'Armando el Excel…' : '📄 Exportar corte a Excel'}
               </button>
             </div>
+
+            <h3>Respaldo</h3>
+            <p className="nota" style={{ marginTop: 0 }}>
+              Baja una copia de todo lo que hay en la nube para guardarla en tu
+              computadora, una USB o tu Drive. Conviene hacerlo seguido.
+            </p>
+            <div className="fila" style={{ flexWrap: 'wrap' }}>
+              <button className="boton suave mini" onClick={respaldarDatos} disabled={!!respaldando}>
+                {respaldando === 'datos' ? 'Bajando datos…' : '💾 Respaldar datos'}
+              </button>
+              <button className="boton suave mini" onClick={respaldarFotos} disabled={!!respaldando}>
+                {respaldando === 'fotos' ? 'Bajando fotos…' : '🖼️ Respaldar fotos'}
+              </button>
+            </div>
+            {avisoRespaldo && <div className="aviso">{avisoRespaldo}</div>}
           </>
         )}
 
@@ -1837,12 +1900,13 @@ export default function Bardas() {
               )}
             </div>
 
-            <label className="etiqueta">Equipo</label>
+            <label className="etiqueta">Equipo (obligatorio para guardar)</label>
             <input
               type="text"
               autoComplete="off"
               value={form.equipo}
               onChange={(e) => setForm((f) => ({ ...f, equipo: e.target.value }))}
+              style={!form.equipo.trim() ? { borderColor: '#c1121f' } : undefined}
             />
 
             <h3>¿Ya la hiciste?</h3>
@@ -1898,8 +1962,19 @@ export default function Bardas() {
               onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
             />
 
+            {/* Sin equipo, la columna RESPONSABLE del corte salía vacía y no
+                había forma de saber quién hizo la visita. */}
+            {!form.equipo.trim() && (
+              <div className="aviso" style={{ background: '#fff0f0', borderColor: '#e3b3b3', marginTop: 10 }}>
+                ✍️ Escribe el nombre del equipo arriba para poder guardar.
+              </div>
+            )}
             <div className="fila" style={{ marginTop: 10 }}>
-              <button className="boton primario" onClick={guardar} disabled={guardando || !form.estado}>
+              <button
+                className="boton primario"
+                onClick={guardar}
+                disabled={guardando || !form.estado || !form.equipo.trim()}
+              >
                 {guardando ? 'Guardando…' : 'Guardar el resultado'}
               </button>
               <button className="boton suave" onClick={() => setRegistrando(null)}>

@@ -153,6 +153,24 @@ para brigadistas, registro de material repartido.
   edición, para lo que ya se usaba (orden de lectura); el corte lee de
   `primer_registro`, con `actualizado` como respaldo si esa columna aún no
   existe en la base.
+- HISTORIAL DE CAMBIOS (oct 2026): tabla `historial_cambios` en Supabase.
+  Un trigger (registrar_cambio, security definer) guarda cada alta, corrección
+  o baja de bardas_permisos, bardas_nuevas, bardas_calidad y
+  bardas_reservadas con la fila ANTES y DESPUÉS, la hora y el dispositivo.
+  El teléfono solo puede LEERLA (no hay políticas de insert/update/delete):
+  ni la app ni alguien con la llave anon puede borrar ese rastro. Guardados
+  que no cambian nada no se anotan.
+- RESPALDO DESCARGABLE (oct 2026): no hay otra base donde copiar, así que en
+  Bardas (sección Respaldo) hay dos botones (src/lib/respaldo.js): "Respaldar
+  datos" baja un .json con TODAS las tablas completas (leídas por páginas de
+  1000, ver leerTablaCompleta en nube.js) + public/bardas.json; "Respaldar
+  fotos" baja un .zip (fflate, chunk aparte) con TODO el bucket
+  bardas-fotos-nuevas, incluidas fotos que ya no usa ninguna barda (~67 MB en
+  oct 2026; mejor desde computadora). calles_cache no va (se rearma sola) ni
+  las fotos del Excel (viven en el repo). Si una tabla falla, se anota en
+  "errores" y se sigue con las demás.
+- Registrar el resultado de una visita EXIGE nombre de equipo (botón Guardar
+  bloqueado con aviso): sin él la columna RESPONSABLE del corte salía vacía.
 - Corte para la oficina: botón "Exportar corte a Excel" en la vista Bardas
   (src/lib/corteBardas.js), con filtro Todas / Solo visitadas / Solo con
   permiso. Las columnas y su orden son EXACTO el archivo que ya usa la

@@ -419,6 +419,56 @@ export async function liberarReservasBardas(ids) {
   }
 }
 
+// ---------- respaldo (oct 2026) ----------------------------------------------
+// Lecturas COMPLETAS para src/lib/respaldo.js: la nube responde de a 1000
+// filas como máximo, así que se piden por páginas, ordenadas por la llave
+// para que ninguna fila se repita ni se salte entre una página y otra.
+
+const POR_PAGINA = 1000;
+
+export async function leerTablaCompleta(tabla, columnaOrden) {
+  if (!nubeConfigurada()) return [];
+  const filas = [];
+  for (let desde = 0; ; desde += POR_PAGINA) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${tabla}?select=*&order=${columnaOrden}.asc` +
+        `&limit=${POR_PAGINA}&offset=${desde}`,
+      { headers: cabeceras() }
+    );
+    if (!res.ok) throw new Error('la nube respondió ' + res.status);
+    const pagina = await res.json();
+    filas.push(...pagina);
+    if (pagina.length < POR_PAGINA) return filas;
+  }
+}
+
+// Nombres de TODOS los archivos del bucket de fotos de bardas nuevas, incluso
+// los que ya no aparecen en ninguna barda (fotos quitadas al corregir).
+export async function listarFotosNube() {
+  if (!nubeConfigurada()) return [];
+  const nombres = [];
+  for (let desde = 0; ; desde += POR_PAGINA) {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/bardas-fotos-nuevas`, {
+      method: 'POST',
+      headers: cabeceras(),
+      body: JSON.stringify({
+        prefix: '',
+        limit: POR_PAGINA,
+        offset: desde,
+        sortBy: { column: 'name', order: 'asc' }
+      })
+    });
+    if (!res.ok) throw new Error('el almacenamiento respondió ' + res.status);
+    const pagina = await res.json();
+    // Las "carpetas" vienen sin id; solo se quieren archivos.
+    nombres.push(...pagina.filter((o) => o.id).map((o) => o.name));
+    if (pagina.length < POR_PAGINA) return nombres;
+  }
+}
+
+export const urlFotoNube = (nombre) =>
+  `${SUPABASE_URL}/storage/v1/object/public/bardas-fotos-nuevas/${encodeURIComponent(nombre)}`;
+
 // ---------- caché de calles compartido --------------------------------------
 // El primer teléfono que descarga una colonia de OpenStreetMap la guarda aquí;
 // los demás la leen de Supabase (rápido y confiable aunque OSM esté saturado).

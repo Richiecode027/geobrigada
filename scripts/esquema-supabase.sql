@@ -391,3 +391,88 @@ drop trigger if exists bardas_permisos_primer_registro on bardas_permisos;
 create trigger bardas_permisos_primer_registro
   before insert or update on bardas_permisos
   for each row execute function conservar_primer_registro();
+
+-- ---------------------------------------------------------------------------
+-- Historial de cambios (oct 2026): antes, al corregir una barda, el dato
+-- anterior se perdía para siempre. Ahora cada alta, corrección o baja en las
+-- cuatro tablas de bardas deja una copia de cómo estaba ANTES y cómo quedó
+-- DESPUÉS, con la hora y el teléfono que lo hizo (columna dispositivo).
+-- Sirve para deshacer errores (alguien registró la barda equivocada) y para
+-- saber qué pasó si alguien con la llave de la app sobrescribe registros.
+--
+-- Lo llena un disparador de la base, NO el teléfono: el teléfono no puede
+-- escribir, corregir ni borrar el historial (no hay políticas de insert/
+-- update/delete para anon; el disparador corre con permisos del dueño,
+-- "security definer"). Desde la app solo se puede LEER, para el respaldo.
+
+create table if not exists historial_cambios (
+  id bigint generated always as identity primary key,
+  tabla text not null,
+  clave text,                 -- id de la barda afectada
+  operacion text not null,    -- INSERT / UPDATE / DELETE
+  antes jsonb,                -- la fila completa antes del cambio (null en altas)
+  despues jsonb,              -- la fila completa después (null en bajas)
+  dispositivo text,
+  cuando timestamptz not null default now()
+);
+
+create index if not exists historial_cambios_tabla_clave
+  on historial_cambios (tabla, clave, cuando);
+
+alter table historial_cambios enable row level security;
+
+drop policy if exists "todos leen el historial" on historial_cambios;
+create policy "todos leen el historial"
+  on historial_cambios for select to anon using (true);
+
+create or replace function registrar_cambio()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fila jsonb;
+begin
+  if TG_OP = 'DELETE' then
+    fila := to_jsonb(old);
+    insert into historial_cambios (tabla, clave, operacion, antes, despues, dispositivo)
+    values (TG_TABLE_NAME, coalesce(fila->>'barda_id', fila->>'id'), TG_OP, fila, null, fila->>'dispositivo');
+    return null;
+  end if;
+
+  fila := to_jsonb(new);
+  if TG_OP = 'UPDATE' then
+    -- Un guardado que no cambió nada no ensucia el historial.
+    if fila = to_jsonb(old) then
+      return null;
+    end if;
+    insert into historial_cambios (tabla, clave, operacion, antes, despues, dispositivo)
+    values (TG_TABLE_NAME, coalesce(fila->>'barda_id', fila->>'id'), TG_OP, to_jsonb(old), fila, fila->>'dispositivo');
+  else
+    insert into historial_cambios (tabla, clave, operacion, antes, despues, dispositivo)
+    values (TG_TABLE_NAME, coalesce(fila->>'barda_id', fila->>'id'), TG_OP, null, fila, fila->>'dispositivo');
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists historial_bardas_permisos on bardas_permisos;
+create trigger historial_bardas_permisos
+  after insert or update or delete on bardas_permisos
+  for each row execute function registrar_cambio();
+
+drop trigger if exists historial_bardas_nuevas on bardas_nuevas;
+create trigger historial_bardas_nuevas
+  after insert or update or delete on bardas_nuevas
+  for each row execute function registrar_cambio();
+
+drop trigger if exists historial_bardas_calidad on bardas_calidad;
+create trigger historial_bardas_calidad
+  after insert or update or delete on bardas_calidad
+  for each row execute function registrar_cambio();
+
+drop trigger if exists historial_bardas_reservadas on bardas_reservadas;
+create trigger historial_bardas_reservadas
+  after insert or update or delete on bardas_reservadas
+  for each row execute function registrar_cambio();
