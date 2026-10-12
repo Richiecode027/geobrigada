@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin } from '../components/useMap.js';
 import AsaPanel from '../components/AsaPanel.jsx';
+import DatosCenso from '../components/DatosCenso.jsx';
 import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCalles } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
@@ -97,7 +98,8 @@ export default function Coordinador({ contexto }) {
           clave: contexto.clave,
           rings,
           tienePoligono: true,
-          viviendas: datos ? datos.v : 0
+          viviendas: datos ? datos.v : 0,
+          censo: datos
         });
       }
     })();
@@ -109,7 +111,7 @@ export default function Coordinador({ contexto }) {
     setAviso('');
     const rings = await ringsPorClave(r.k);
     if (rings) {
-      setColonia({ nombre: r.n, clave: r.k, rings, tienePoligono: true, viviendas: r.v });
+      setColonia({ nombre: r.n, clave: r.k, rings, tienePoligono: true, viviendas: r.v, censo: r });
     } else {
       setColonia(null);
       setAviso(
@@ -126,7 +128,7 @@ export default function Coordinador({ contexto }) {
     if (c) {
       setEquipos(null);
       setAviso('');
-      setColonia({ nombre: c.n, clave: c.k, rings: c.rings, tienePoligono: true, viviendas: c.v });
+      setColonia({ nombre: c.n, clave: c.k, rings: c.rings, tienePoligono: true, viviendas: c.v, censo: c });
     } else {
       setAviso('Ahí no hay ninguna colonia del catálogo. Toca dentro de una zona urbana de Morelia.');
     }
@@ -444,6 +446,7 @@ export default function Coordinador({ contexto }) {
               <strong>{r.n}</strong> · {r.t}
               {r.cp ? ` · CP ${r.cp}` : ''}
               {r.v > 0 && <span style={{ color: '#555' }}> · 🏠 {r.v} viv.</span>}
+              {r.p > 0 && <span style={{ color: '#555' }}> · 👥 {r.p.toLocaleString('es-MX')} hab.</span>}
               <span className="badge ok">✓ límites oficiales</span>
             </div>
           ))}
@@ -491,6 +494,7 @@ export default function Coordinador({ contexto }) {
                 {nombreActividad.toLowerCase()} para no quedarte corto.
               </div>
             )}
+            <DatosCenso c={colonia.censo} />
             <label className="etiqueta">Actividad</label>
             <div className="fila">
               <input

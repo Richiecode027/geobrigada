@@ -24,6 +24,16 @@ para brigadistas, registro de material repartido.
        polígonos con turf (buffer+union+erode, tolerante a que estén
        separados por calles) y las agrega como zonas tipo "Tenencia" con
        viviendas reales del censo. Suma 8 tenencias, ~934 zonas totales.
+    4. `node scripts/build-poblacion.mjs` — agrega a cada zona, SIN tocar "v"
+       ni los polígonos: "vt" (viviendas TOTALES: habitadas + deshabitadas +
+       uso temporal; VIVTOT), "p" (personas; POBTOT) y "d" (densidad bruta,
+       personas/km² del polígono, incluye parques y baldíos). Asigna las
+       manzanas con las mismas reglas que los pasos 2 y 3 (verificado: el
+       recálculo de habitadas cuadra con "v" en las 934 zonas). "v" sigue
+       siendo lo que usan las estimaciones de material y el reparto entre
+       brigadas. Se puede correr solo, las veces que haga falta. Se muestra
+       en src/components/DatosCenso.jsx (Planear y "Viendo colonia" en
+       Bardas).
   Al cambiar el catálogo hay que subir la versión del caché en public/sw.js.
   La búsqueda por nombre es local; las calles vienen de Overpass en runtime
   (consulta por bbox + recorte local en src/lib/units.js, NO por poly) —

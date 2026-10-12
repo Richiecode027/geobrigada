@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap } from '../components/useMap.js';
 import AsaPanel from '../components/AsaPanel.jsx';
+import DatosCenso from '../components/DatosCenso.jsx';
 import { iniciarGPS, obtenerPosicionActual } from '../lib/gps.js';
 import { registrarAtras } from '../lib/atras.js';
 import { comprimirImagen } from '../lib/imagen.js';
@@ -1000,7 +1001,7 @@ export default function Bardas() {
       const c = await coloniaEnPunto(e.latlng.lat, e.latlng.lng);
       if (c) {
         setResultadosColonia(null);
-        setColoniaVista({ nombre: c.n, rings: c.rings });
+        setColoniaVista({ nombre: c.n, rings: c.rings, censo: c });
       } else {
         setAvisoColonia('Ahí no hay ninguna colonia del catálogo.');
       }
@@ -1068,7 +1069,7 @@ export default function Bardas() {
     }
     setResultadosColonia(null);
     setTextoColonia('');
-    setColoniaVista({ nombre: r.n, rings });
+    setColoniaVista({ nombre: r.n, rings, censo: r });
   }
 
   // Dónde estás y hacia dónde ves. Con brújula sale una flecha que gira con el
@@ -1424,6 +1425,7 @@ export default function Bardas() {
             </button>
           </div>
         )}
+        {!cargando && coloniaVista && <DatosCenso c={coloniaVista.censo} />}
 
         {/* ---------- RETOMAR UN RECORRIDO QUE SE QUEDÓ A MEDIAS ---------- */}
         {!cargando && sesionPrevia && (
