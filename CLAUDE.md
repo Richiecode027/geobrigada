@@ -34,6 +34,17 @@ para brigadistas, registro de material repartido.
        brigadas. Se puede correr solo, las veces que haga falta. Se muestra
        en src/components/DatosCenso.jsx (Planear y "Viendo colonia" en
        Bardas).
+  SECCIONES ELECTORALES (oct 2026): `node scripts/build-secciones.mjs "<.7z
+  BGD del INE>"` (mismo archivo que build-distritos) arma
+  public/secciones_morelia.json (428 secciones, ~370 KB) con el mismo formato
+  {colonias, polys} y clave "S"+número (S2881), más dl/df (distritos) y
+  v/vt/p/d del censo (reusa de TEMP los archivos de build-poblacion). OJO: el
+  INE numera Morelia como municipio 54 (el INEGI, 053): se busca por nombre.
+  src/lib/colonias.js resuelve las claves "S…" contra ese archivo (que solo se
+  baja al usarlo), así que una sección se busca por número, se planea, se
+  manda en link de brigadista y sale en Cobertura/Historial como cualquier
+  colonia. Toque largo en Bardas dice también la sección del punto. Sus
+  calles se precargan aparte: `node scripts/precargar-calles.mjs secciones`.
   Al cambiar el catálogo hay que subir la versión del caché en public/sw.js.
   La búsqueda por nombre es local; las calles vienen de Overpass en runtime
   (consulta por bbox + recorte local en src/lib/units.js, NO por poly) —

@@ -3,7 +3,7 @@
 // calle depende de que OpenStreetMap responda: la app encuentra su colonia
 // en la nube a la primera.
 //
-// Correr desde la PC: node scripts/precargar-calles.mjs
+// Correr desde la PC: node scripts/precargar-calles.mjs   (o "... secciones")
 // - Va despacio a propósito (pausa entre colonias) para respetar los
 //   servidores de OpenStreetMap.
 // - Se puede interrumpir y volver a correr: se salta lo que ya está fresco
@@ -84,9 +84,13 @@ async function subirANube(clave, ways) {
   if (!res.ok) throw new Error('Supabase respondió ' + res.status + ' al guardar');
 }
 
-const { colonias, polys } = JSON.parse(
-  fs.readFileSync('public/colonias_morelia.json', 'utf8')
-);
+// Con el argumento 'secciones' precarga las secciones electorales
+// (public/secciones_morelia.json) en vez de las colonias:
+//   node scripts/precargar-calles.mjs secciones
+const ARCHIVO = process.argv.includes('secciones')
+  ? 'public/secciones_morelia.json'
+  : 'public/colonias_morelia.json';
+const { colonias, polys } = JSON.parse(fs.readFileSync(ARCHIVO, 'utf8'));
 
 console.log(`Catálogo: ${colonias.length} colonias. Revisando la nube...`);
 const enNube = await clavesEnNube();

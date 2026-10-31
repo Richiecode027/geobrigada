@@ -7,10 +7,16 @@
 const fmt = (n) => Number(n || 0).toLocaleString('es-MX');
 
 export default function DatosCenso({ c }) {
-  if (!c || !(c.vt > 0 || c.p > 0)) return null;
+  if (!c || !(c.vt > 0 || c.p > 0 || c.dl)) return null;
   const otras = Math.max(0, (c.vt || 0) - (c.v || 0));
   return (
     <div className="aviso" style={{ background: '#f6f7fb', borderColor: '#d9dce8', fontSize: '0.85rem' }}>
+      {/* Las secciones electorales (clave S…) traen sus distritos del INE. */}
+      {c.dl && (
+        <div style={{ marginBottom: 4 }}>
+          🗳️ Distrito local <strong>{c.dl}</strong> · federal <strong>{c.df}</strong>
+        </div>
+      )}
       <strong>Censo INEGI 2020</strong>
       <div>🏠 Viviendas habitadas: <strong>{fmt(c.v)}</strong></div>
       <div>

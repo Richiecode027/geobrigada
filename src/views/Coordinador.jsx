@@ -360,7 +360,7 @@ export default function Coordinador({ contexto }) {
       <div className="mapa" ref={mapaRef} />
       <div ref={panelRef} className={'panel' + (panelPlegado ? ' plegado' : '')}>
         <AsaPanel plegado={panelPlegado} onCambiar={setPanelPlegado} panelRef={panelRef} />
-        <h2>1. Busca la colonia</h2>
+        <h2>1. Busca la colonia o sección</h2>
         <form onSubmit={buscar} className="fila">
           <input
             type="text"

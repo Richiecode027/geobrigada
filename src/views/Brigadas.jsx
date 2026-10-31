@@ -253,7 +253,7 @@ export default function Brigadas({ onPlanear }) {
           Colonias a repartir ({pool.length}
           {totalViv > 0 ? ` · ${totalViv} viviendas` : ''})
         </h3>
-        <label className="etiqueta">Buscar colonia para agregar</label>
+        <label className="etiqueta">Buscar colonia o sección para agregar</label>
         <input
           type="text"
           autoComplete="off"

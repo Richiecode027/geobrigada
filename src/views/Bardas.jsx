@@ -10,7 +10,7 @@ import { coordsDeLinkMaps } from '../lib/mapsLink.js';
 import { ubicacionAproximada } from '../lib/ubicacion.js';
 import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { cargarDistritos, COLOR_DISTRITO } from '../lib/distritos.js';
-import { buscarColonias, ringsPorClave, coloniaEnPunto } from '../lib/colonias.js';
+import { buscarColonias, ringsPorClave, coloniaEnPunto, seccionEnPunto } from '../lib/colonias.js';
 // Solo las etiquetas y la función: la librería pesada (xlsx) se carga dentro
 // de descargarCorteBardas, hasta que alguien toca el botón.
 import { FILTROS as FILTROS_CORTE, descargarCorteBardas } from '../lib/corteBardas.js';
@@ -986,10 +986,20 @@ export default function Bardas() {
     if (!map) return;
     const alPresionar = async (e) => {
       setAvisoColonia('');
-      const c = await coloniaEnPunto(e.latlng.lat, e.latlng.lng);
+      const [c, s] = await Promise.all([
+        coloniaEnPunto(e.latlng.lat, e.latlng.lng),
+        // La sección electoral del punto, de paso (si su catálogo no carga, no
+        // pasa nada: solo no se dice).
+        seccionEnPunto(e.latlng.lat, e.latlng.lng).catch(() => null)
+      ]);
       if (c) {
         setResultadosColonia(null);
-        setColoniaVista({ nombre: c.n, rings: c.rings, censo: c });
+        setColoniaVista({ nombre: c.n, rings: c.rings, censo: c, seccion: s && s.s });
+      } else if (s) {
+        // Fuera de toda colonia (un baldío, una tenencia sin delimitar): al
+        // menos se ve la sección.
+        setResultadosColonia(null);
+        setColoniaVista({ nombre: s.n, rings: s.rings, censo: s });
       } else {
         setAvisoColonia('Ahí no hay ninguna colonia del catálogo.');
       }
@@ -1388,7 +1398,7 @@ export default function Bardas() {
             <input
               type="text"
               autoComplete="off"
-              placeholder="Nombre de la colonia…"
+              placeholder="Nombre de la colonia o número de sección…"
               value={textoColonia}
               onChange={(e) => setTextoColonia(e.target.value)}
             />
@@ -1416,6 +1426,7 @@ export default function Bardas() {
         {!cargando && coloniaVista && (
           <div className="aviso" style={{ background: '#eef4fc', borderColor: '#c3d8f0' }}>
             🗺️ Viendo <strong>{coloniaVista.nombre}</strong>
+            {coloniaVista.seccion && <> · sección <strong>{coloniaVista.seccion}</strong></>}
             <button
               className="boton suave mini"
               style={{ marginLeft: 8 }}
