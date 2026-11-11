@@ -10,6 +10,9 @@ import { leerCallesNube, guardarCallesNube } from '../lib/nube.js';
 
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
+  // Espejo de VK (lista oficial de espejos en wiki.openstreetmap.org). Se
+  // agregó en nov 2026: los otros tres estaban caídos o colgados a la vez.
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
