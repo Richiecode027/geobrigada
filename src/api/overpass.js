@@ -17,9 +17,11 @@ const ENDPOINTS = [
   'https://overpass.private.coffee/api/interpreter'
 ];
 
-// Si un espejo se cuelga sin responder, se corta a los 25 s y se pasa al
-// siguiente; sin esto la app se queda "calculando rutas" para siempre.
-const ESPERA_MS = 25000;
+// Si un espejo se cuelga sin responder, se corta y se pasa al siguiente; sin
+// esto la app se queda "calculando rutas" para siempre. 45 s (antes 25): el
+// espejo de VK, que en nov 2026 era el único que respondía, tarda 17-40 s en
+// una colonia normal, y con 25 s se cortaba justo antes de contestar.
+const ESPERA_MS = 45000;
 
 async function fetchConLimite(url, opts) {
   const ctrl = new AbortController();
@@ -61,6 +63,27 @@ function guardarCache(clave, ways) {
       /* el caché es opcional */
     }
   }
+}
+
+// Calles de VARIAS colonias juntas: se piden de una en una (así cada una sale
+// del caché de la nube, que está guardado por colonia; pedir una sola caja que
+// las cubra a todas sería una consulta enorme y sin caché) y se juntan
+// quitando las repetidas — una calle del límite entre dos colonias viene en
+// las dos. El orden de `partes` decide el orden del resultado: debe ser el
+// mismo en Planear y en el teléfono del brigadista.
+export async function obtenerCallesDePartes(partes) {
+  if (partes.length === 1) return obtenerCalles(partes[0]);
+  const vistas = new Set();
+  const todas = [];
+  for (const rings of partes) {
+    for (const w of await obtenerCalles(rings)) {
+      const firma = w.geometry.map((p) => p.lat.toFixed(6) + ',' + p.lon.toFixed(6)).join(';');
+      if (vistas.has(firma)) continue;
+      vistas.add(firma);
+      todas.push(w);
+    }
+  }
+  return todas;
 }
 
 export async function obtenerCalles(rings) {

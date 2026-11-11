@@ -64,16 +64,52 @@ export async function todasLasColonias() {
   return colonias;
 }
 
-// Anillos [lat,lng] de la colonia (o sección), por su clave.
-export async function ringsPorClave(k) {
-  const { polys } = await catalogoDe(k);
-  return polys[k] || null;
+// VARIAS COLONIAS JUNTAS (nov 2026): cuando a una brigada le asignan varias
+// colonias a la vez, Planear las junta en una sola zona y su clave es la lista
+// separada por comas ("k1,k2,S2881"). El ORDEN importa y se respeta tal cual:
+// el teléfono del brigadista recalcula la división con las colonias en el
+// mismo orden que las vio el coordinador (la división es determinista).
+const partesDe = (k) => String(k).split(',').filter(Boolean);
+
+// Anillos de cada colonia de una clave (una o varias), en orden; null si
+// alguna no existe.
+export async function ringsPorPartes(k) {
+  const partes = [];
+  for (const p of partesDe(k)) {
+    const { polys } = await catalogoDe(p);
+    if (!polys[p]) return null;
+    partes.push(polys[p]);
+  }
+  return partes;
 }
 
-// Datos de una colonia (o sección) por su clave (incluye viviendas "v"), o null.
+// Anillos [lat,lng] de la colonia (o sección, o varias juntas), por su clave.
+export async function ringsPorClave(k) {
+  const partes = await ringsPorPartes(k);
+  return partes ? partes.flat(1) : null;
+}
+
+// Datos de una colonia (o sección) por su clave (incluye viviendas "v"), o
+// null. Para varias juntas, suma viviendas y personas y une los nombres.
 export async function coloniaPorClave(k) {
-  const { colonias } = await catalogoDe(k);
-  return colonias.find((c) => c.k === k) || null;
+  const claves = partesDe(k);
+  const datos = [];
+  for (const p of claves) {
+    const { colonias } = await catalogoDe(p);
+    const c = colonias.find((x) => x.k === p);
+    if (!c) return null;
+    datos.push(c);
+  }
+  if (datos.length === 1) return datos[0];
+  const suma = (campo) => datos.reduce((a, c) => a + (c[campo] || 0), 0);
+  return {
+    k: claves.join(','),
+    n: datos.map((c) => c.n).join(' + '),
+    t: datos.length + ' colonias',
+    v: suma('v'),
+    vt: suma('vt'),
+    p: suma('p')
+  };
 }
 
 // ¿Qué colonia contiene este punto? Devuelve { n, k, t, cp, rings } o null.

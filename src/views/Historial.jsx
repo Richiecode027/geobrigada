@@ -4,8 +4,8 @@ import { useMap } from '../components/useMap.js';
 import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { cargarReportes, borrarReporte, importarReportes } from '../lib/storage.js';
 import { nubeConfigurada, cargarReportesNube, subirPendientes } from '../lib/nube.js';
-import { ringsPorClave } from '../lib/colonias.js';
-import { obtenerCalles } from '../api/overpass.js';
+import { ringsPorPartes } from '../lib/colonias.js';
+import { obtenerCallesDePartes } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, TEAM_COLORS } from '../lib/partition.js';
 import { decodificarPoly } from '../lib/links.js';
@@ -105,11 +105,14 @@ export default function Historial() {
       if (seleccion.length === 1) {
         const r = seleccion[0];
         try {
-          let rings = null;
-          if (r.col) rings = await ringsPorClave(r.col);
-          else if (r.poly) rings = [decodificarPoly(r.poly)];
+          // Mismas calles y en el mismo orden que el teléfono del brigadista
+          // (colonia por colonia si eran varias): si no, la división sale distinta.
+          let partes = null;
+          if (r.col) partes = await ringsPorPartes(r.col);
+          else if (r.poly) partes = [[decodificarPoly(r.poly)]];
+          const rings = partes ? partes.flat(1) : null;
           if (rings && r.nEquipos) {
-            const ways = await obtenerCalles(rings);
+            const ways = await obtenerCallesDePartes(partes);
             const units = buildUnits(ways, rings);
             const grupos = partition(units, r.nEquipos);
             const mia = grupos[r.equipo - 1] || [];

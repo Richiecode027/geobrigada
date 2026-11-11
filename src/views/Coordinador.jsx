@@ -5,7 +5,7 @@ import AsaPanel from '../components/AsaPanel.jsx';
 import DatosCenso from '../components/DatosCenso.jsx';
 import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
-import { obtenerCalles } from '../api/overpass.js';
+import { obtenerCallesDePartes } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, orderRoute, recorridoContinuo, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
 import { ringsBounds } from '../lib/geo.js';
@@ -91,17 +91,60 @@ export default function Coordinador({ contexto }) {
       const rings = await ringsPorClave(contexto.clave);
       const datos = await coloniaPorClave(contexto.clave);
       if (rings) {
-        setColonia({
-          nombre: contexto.nombre,
-          clave: contexto.clave,
-          rings,
-          tienePoligono: true,
-          viviendas: datos ? datos.v : 0,
-          censo: datos
-        });
+        setAgregandoOtra(false);
+        setColonia(zonaDe([{ k: contexto.clave, n: contexto.nombre, rings, datos: datos || {} }]));
       }
     })();
   }, [contexto && contexto.sello]);
+
+  // --- varias colonias juntas -------------------------------------------
+  // Cuando asignan varias colonias a la vez: con "Agregar otra colonia"
+  // prendido, la siguiente que se elija (buscador o toque largo) se SUMA a la
+  // zona en vez de reemplazarla. La zona es una "colonia" más: clave con las
+  // claves separadas por comas (en orden, ver colonias.js), anillos de todas y
+  // viviendas sumadas, así que el reparto, los links y la Cobertura no
+  // necesitan saber que son varias.
+  const [agregandoOtra, setAgregandoOtra] = useState(false);
+
+  function zonaDe(partes) {
+    if (partes.length === 1) {
+      const p = partes[0];
+      return { nombre: p.n, clave: p.k, rings: p.rings, tienePoligono: true, viviendas: p.datos.v, censo: p.datos, partes };
+    }
+    const suma = (c) => partes.reduce((a, p) => a + (p.datos[c] || 0), 0);
+    return {
+      nombre: partes.map((p) => p.n).join(' + '),
+      clave: partes.map((p) => p.k).join(','),
+      rings: partes.flatMap((p) => p.rings),
+      tienePoligono: true,
+      viviendas: suma('v'),
+      censo: { v: suma('v'), vt: suma('vt'), p: suma('p') },
+      partes
+    };
+  }
+
+  // c: zona del catálogo ({k, n, v, vt, p...}); rings: su contorno.
+  function ponerColonia(c, rings) {
+    setEquipos(null);
+    setAviso('');
+    const nueva = { k: c.k, n: c.n, rings, datos: c };
+    if (agregandoOtra && colonia && colonia.partes) {
+      setAgregandoOtra(false);
+      if (colonia.partes.some((p) => p.k === c.k)) {
+        setAviso(`"${c.n}" ya está en la zona.`);
+        return;
+      }
+      setColonia(zonaDe([...colonia.partes, nueva]));
+    } else {
+      setColonia(zonaDe([nueva]));
+    }
+  }
+
+  function quitarParte(k) {
+    setEquipos(null);
+    const quedan = colonia.partes.filter((p) => p.k !== k);
+    setColonia(quedan.length ? zonaDe(quedan) : null);
+  }
 
   async function elegirResultado(r) {
     setResultados(null);
@@ -109,7 +152,7 @@ export default function Coordinador({ contexto }) {
     setAviso('');
     const rings = await ringsPorClave(r.k);
     if (rings) {
-      setColonia({ nombre: r.n, clave: r.k, rings, tienePoligono: true, viviendas: r.v, censo: r });
+      ponerColonia(r, rings);
     } else {
       setColonia(null);
       setAviso(
@@ -124,9 +167,7 @@ export default function Coordinador({ contexto }) {
     setResultados(null);
     const c = await coloniaEnPunto(latlng.lat, latlng.lng);
     if (c) {
-      setEquipos(null);
-      setAviso('');
-      setColonia({ nombre: c.n, clave: c.k, rings: c.rings, tienePoligono: true, viviendas: c.v, censo: c });
+      ponerColonia(c, c.rings);
     } else {
       setAviso('Ahí no hay ninguna colonia del catálogo. Toca dentro de una zona urbana de Morelia.');
     }
@@ -137,13 +178,16 @@ export default function Coordinador({ contexto }) {
     const alTocarLargo = (e) => seleccionarEnPunto(e.latlng);
     map.on('contextmenu', alTocarLargo);
     return () => map.off('contextmenu', alTocarLargo);
-  }, [map, dibujando]);
+    // colonia y agregandoOtra van en la lista: si no, el toque largo usaría
+    // una copia vieja y no sabría que hay que SUMAR la colonia a la zona.
+  }, [map, dibujando, colonia, agregandoOtra]);
 
   // --- dibujo manual ----------------------------------------------------
   function iniciarDibujo() {
     setDibujando(true);
     setPuntos([]);
     setColonia(null);
+    setAgregandoOtra(false);
     setEquipos(null);
     setAviso('Toca el mapa para marcar el contorno de la colonia (mínimo 3 puntos).');
   }
@@ -236,7 +280,9 @@ export default function Coordinador({ contexto }) {
     setCargando(true);
     setEquipos(null);
     try {
-      const calles = await obtenerCalles(colonia.rings);
+      const calles = await obtenerCallesDePartes(
+        colonia.partes ? colonia.partes.map((p) => p.rings) : [colonia.rings]
+      );
       const units = buildUnits(calles, colonia.rings);
       if (units.length === 0) {
         throw new Error(
@@ -448,9 +494,41 @@ export default function Coordinador({ contexto }) {
                 {brigada.trim() && <>👥 {brigada.trim()}</>}
               </div>
             )}
-            <div className="fila">
-              <strong style={{ flex: 1 }}>{colonia.nombre}</strong>
-            </div>
+            {colonia.partes && colonia.partes.length > 1 ? (
+              <div className="tarjeta-equipo" style={{ borderLeftColor: '#457b9d' }}>
+                <strong>{colonia.partes.length} colonias juntas</strong>
+                {colonia.partes.map((p) => (
+                  <div key={p.k} className="fila" style={{ alignItems: 'center', marginTop: 4 }}>
+                    <span style={{ flex: 1 }}>{p.n}</span>
+                    <button className="boton suave mini" onClick={() => quitarParte(p.k)} aria-label={'Quitar ' + p.n}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="fila">
+                <strong style={{ flex: 1 }}>{colonia.nombre}</strong>
+              </div>
+            )}
+            {/* Solo zonas del catálogo se pueden juntar: una dibujada a mano no
+                tiene clave para mandarla en el link junto con otras. */}
+            {colonia.partes && (
+              <div className="fila">
+                <button
+                  className={agregandoOtra ? 'boton primario mini' : 'boton suave mini'}
+                  onClick={() => setAgregandoOtra((v) => !v)}
+                >
+                  {agregandoOtra ? 'Cancelar' : '➕ Agregar otra colonia'}
+                </button>
+              </div>
+            )}
+            {agregandoOtra && (
+              <div className="aviso" style={{ background: '#eef4fc', borderColor: '#c3d8f0' }}>
+                Busca la siguiente colonia o sección arriba, o mantén presionado
+                el mapa sobre ella: se suma a la zona en vez de reemplazarla.
+              </div>
+            )}
             <DatosCenso c={colonia.censo} />
             <label className="etiqueta">Actividad</label>
             <div className="fila">

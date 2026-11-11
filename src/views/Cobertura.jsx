@@ -4,8 +4,8 @@ import { useMap } from '../components/useMap.js';
 import { useMiUbicacion } from '../components/useMiUbicacion.js';
 import { cargarReportes } from '../lib/storage.js';
 import { nubeConfigurada, cargarReportesNube } from '../lib/nube.js';
-import { ringsPorClave, coloniaPorClave } from '../lib/colonias.js';
-import { obtenerCalles } from '../api/overpass.js';
+import { ringsPorClave, ringsPorPartes, coloniaPorClave } from '../lib/colonias.js';
+import { obtenerCallesDePartes } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { decodificarPoly } from '../lib/links.js';
 import { ringsBounds, haversine } from '../lib/geo.js';
@@ -174,12 +174,13 @@ export default function Cobertura() {
     (async () => {
       setCalculando(true);
       try {
-        let rings = detalle.rings;
-        if (!rings && detalle.col) rings = await ringsPorClave(detalle.col);
-        if (!rings && detalle.poly) rings = [decodificarPoly(detalle.poly)];
-        if (!rings) throw new Error('Esta colonia no tiene polígono guardado.');
+        let partes = detalle.rings ? [detalle.rings] : null;
+        if (!partes && detalle.col) partes = await ringsPorPartes(detalle.col);
+        if (!partes && detalle.poly) partes = [[decodificarPoly(detalle.poly)]];
+        if (!partes) throw new Error('Esta colonia no tiene polígono guardado.');
+        const rings = partes.flat(1);
 
-        const ways = await obtenerCalles(rings);
+        const ways = await obtenerCallesDePartes(partes);
         const units = buildUnits(ways, rings);
         const puntosTrack = detalle.tracks.flat();
 

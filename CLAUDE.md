@@ -54,6 +54,22 @@ para brigadistas, registro de material repartido.
   zonas al caché de Supabase para que los teléfonos no dependan de Overpass;
   correrlo de nuevo si cambia la consulta o el catálogo). Si Overpass falla,
   la app usa como salvavidas el caché vencido (local o nube).
+- VARIAS COLONIAS JUNTAS (nov 2026): en Planear, "➕ Agregar otra colonia"
+  suma la siguiente que se elija (buscador o toque largo) a la zona en vez de
+  reemplazarla; se reparte entre equipos como una sola colonia. La clave es
+  la lista separada por comas ("k1,k2,S2881", ORDEN fijo: el teléfono del
+  brigadista recalcula con el mismo orden). src/lib/colonias.js
+  (ringsPorPartes/ringsPorClave/coloniaPorClave) entiende esas claves, y las
+  calles se piden colonia por colonia con obtenerCallesDePartes (overpass.js:
+  así salen del caché de cada una; se quitan repetidas por geometría).
+  Planear, Brigadista, Historial y Cobertura usan esa misma función: si no,
+  la división no coincidiría. Las dibujadas a mano no se pueden juntar (no
+  tienen clave). Al dibujar a mano hay "↩ Quitar último punto".
+- OVERPASS (nov 2026): overpass-api.de daba 502 y kumi/private.coffee no
+  respondían; se agregó el espejo de VK (maps.mail.ru), que tarda 17-40 s por
+  colonia, por eso ESPERA_MS = 45 s. El caché de calles en la nube solo
+  tenía 97 de 934 colonias: precargar-calles.mjs ahora prueba todos los
+  espejos ante cualquier falla (antes un 502 tiraba la colonia).
 - EN PRODUCCIÓN: https://geobrigada.netlify.app — Netlify construye y publica
   solo con cada push a `master` de github.com/Richiecode027/geobrigada.
   Publicar un cambio = commit + `git push`. No usar Netlify Drop.

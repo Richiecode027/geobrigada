@@ -55,27 +55,34 @@ async function clavesEnNube() {
   }
 }
 
-async function bajarDeOverpass(query, intento = 0) {
-  const endpoint = ENDPOINTS[intento % ENDPOINTS.length];
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      // Cortesía de OpenStreetMap: identificarse. Sin esto responden 406.
-      'User-Agent': 'GeoBrigada/1.0 (precarga de calles de Morelia; slasherbaird@gmail.com)'
-    },
-    body: 'data=' + encodeURIComponent(query)
-  });
-  if (res.status === 429 || res.status === 504) {
-    if (intento >= 8) throw new Error('Overpass respondió ' + res.status + ' (8 intentos)');
-    const espera = 15000 * (intento + 1); // espera creciente: 15 s, 30 s...
-    console.log(`    saturado (${res.status}), esperando ${espera / 1000} s...`);
-    await dormir(espera);
-    return bajarDeOverpass(query, intento + 1);
+// Prueba los espejos en orden; si uno falla de cualquier forma (error, sin
+// respuesta en 90 s, respuesta que no es JSON) pasa al siguiente. Antes solo
+// cambiaba de espejo con 429/504, y un 502 del primero tiraba la colonia.
+async function bajarDeOverpass(query) {
+  let ultimo = null;
+  for (let vuelta = 0; vuelta < 3; vuelta++) {
+    for (const endpoint of ENDPOINTS) {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            // Cortesía de OpenStreetMap: identificarse. Sin esto responden 406.
+            'User-Agent': 'GeoBrigada/1.0 (precarga de calles de Morelia)'
+          },
+          body: 'data=' + encodeURIComponent(query),
+          signal: AbortSignal.timeout(90000)
+        });
+        if (!res.ok) throw new Error(endpoint.split('/')[2] + ' respondió ' + res.status);
+        const json = await res.json();
+        return json.elements.filter((e) => e.type === 'way' && e.geometry);
+      } catch (e) {
+        ultimo = e;
+      }
+    }
+    await dormir(15000 * (vuelta + 1)); // todos fallaron: espera y otra vuelta
   }
-  if (!res.ok) throw new Error('Overpass respondió ' + res.status);
-  const json = await res.json();
-  return json.elements.filter((e) => e.type === 'way' && e.geometry);
+  throw ultimo;
 }
 
 async function subirANube(clave, ways) {

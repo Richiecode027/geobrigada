@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin, flechasDeRecorrido } from '../components/useMap.js';
-import { ringsPorClave } from '../lib/colonias.js';
-import { obtenerCalles } from '../api/overpass.js';
+import { ringsPorPartes } from '../lib/colonias.js';
+import { obtenerCallesDePartes } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
 import { partition, orderRoute, recorridoContinuo, caminoACalle, puntoDeEncuentro, TEAM_COLORS } from '../lib/partition.js';
 import { ringsBounds, haversine, partirTrayectoria } from '../lib/geo.js';
@@ -222,16 +222,19 @@ export default function Brigadista({ params }) {
     subirPendientes();
     (async () => {
       try {
-        let rings;
+        // partes: anillos de cada colonia del link (varias si el coordinador
+        // juntó colonias), en el mismo orden que las tenía Planear.
+        let partes;
         if (params.col) {
-          rings = await ringsPorClave(params.col);
-          if (!rings) throw new Error('No se encontró la colonia con clave ' + params.col);
+          partes = await ringsPorPartes(params.col);
+          if (!partes) throw new Error('No se encontró la colonia con clave ' + params.col);
         } else if (params.poly) {
-          rings = [decodificarPoly(params.poly)];
+          partes = [[decodificarPoly(params.poly)]];
         } else {
           throw new Error('El link no incluye la colonia.');
         }
-        const ways = await obtenerCalles(rings);
+        const rings = partes.flat(1);
+        const ways = await obtenerCallesDePartes(partes);
         const units = buildUnits(ways, rings);
         if (units.length === 0) throw new Error('No hay calles dentro del área.');
         const inicio = puntoDeEncuentro(units);
