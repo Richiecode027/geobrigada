@@ -421,6 +421,15 @@ export default function Coordinador({ contexto }) {
             >
               ✓ Terminar dibujo ({puntos.length} puntos)
             </button>
+            {/* Quita solo el último punto: un toque mal puesto ya no obliga a
+                cancelar y empezar todo el contorno de nuevo. */}
+            <button
+              className="boton suave mini"
+              onClick={() => setPuntos((p) => p.slice(0, -1))}
+              disabled={puntos.length === 0}
+            >
+              ↩ Quitar último punto
+            </button>
             <button className="boton peligro mini" onClick={() => { setDibujando(false); setPuntos([]); }}>
               Cancelar
             </button>
