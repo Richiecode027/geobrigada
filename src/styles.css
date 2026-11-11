@@ -348,14 +348,6 @@ textarea { resize: vertical; }
   pointer-events: none;
 }
 
-.flecha-ruta { background: none; border: none; }
-.flecha-ruta div {
-  font-size: 13px;
-  line-height: 1;
-  font-weight: 700;
-  text-align: center;
-  text-shadow: 0 0 2px #fff, 0 0 3px #fff;
-}
 
 .flecha-grande { background: none; border: none; }
 .flecha-grande div {

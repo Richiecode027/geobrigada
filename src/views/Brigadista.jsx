@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin, flechasDeRecorrido } from '../components/useMap.js';
+import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin } from '../components/useMap.js';
 import { ringsPorPartes } from '../lib/colonias.js';
 import { obtenerCallesDePartes } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
@@ -362,8 +362,10 @@ export default function Brigadista({ params }) {
           ? L.polyline(p.coords, { color, weight: 6, opacity: 0.5 }).addTo(g)
           : L.polyline(p.coords, { color, weight: 3, opacity: 0.55, dashArray: '2 9' }).addTo(g)
       );
+      // Sin los triangulitos de sentido sobre la ruta (nov 2026, pedido del
+      // equipo, igual que ya se habían quitado en Planear): estorbaban más de
+      // lo que guiaban. El sentido lo dan el inicio, el "Fin" y la vista guiada.
       const linea = pasos.flatMap((p) => p.coords);
-      flechasDeRecorrido(linea, color).addTo(g);
       marcadorInicio(miRuta[0].coords[0], params.equipo, color).addTo(g);
       if (encuentro) marcadorEncuentro(encuentro).addTo(g);
       const fin = linea[linea.length - 1];
