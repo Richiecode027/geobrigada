@@ -57,20 +57,26 @@ export async function buscarColonias(texto) {
     else if (n.includes(q)) contienen.push(c);
   }
   // Nombres alternos (src/lib/nombresAlternos.js): la colonia oficial sale
-  // con el nombre que se buscó en `tambien`, para que se vea por qué apareció.
+  // con `tambien` = la línea que explica por qué apareció. Una colonia solo
+  // sale una vez aunque varios de sus nombres alternos coincidan.
   const qa = sinTitulos(q);
   if (qa.length >= 3) {
-    for (const { k, alias } of NOMBRES_ALTERNOS) {
+    const yaConAlias = new Set();
+    for (const { k, alias, tipo } of NOMBRES_ALTERNOS) {
+      if (yaConAlias.has(k)) continue;
       const a = sinTitulos(normalizar(alias));
       if (!a.includes(qa)) continue;
       const c = colonias.find((x) => x.k === k);
       if (!c) continue;
-      const conAlias = { ...c, tambien: alias };
+      yaConAlias.add(k);
+      const tambien = (tipo === 'incluye' ? 'aquí queda: ' : 'también le dicen: ') + alias;
+      const conAlias = { ...c, tambien };
       const i = empiezan.indexOf(c);
       const j = contienen.indexOf(c);
       if (i >= 0) empiezan[i] = conAlias;
       else if (j >= 0) contienen[j] = conAlias;
-      else (a.startsWith(qa) ? empiezan : contienen).unshift(conAlias);
+      // al final de su grupo: el nombre oficial gana a un alterno parecido
+      else (a.startsWith(qa) ? empiezan : contienen).push(conAlias);
     }
   }
   return [...empiezan, ...contienen].slice(0, 20);

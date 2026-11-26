@@ -272,7 +272,7 @@ export default function Brigadas({ onPlanear }) {
             <div key={r.k} className="resultado" onClick={() => agregarColonia(r)}>
               <strong>{r.n}</strong> · {r.t}
               {r.v > 0 ? ` · 🏠 ${r.v}` : ''}
-              {r.tambien && <div className="alias-colonia">también le dicen: {r.tambien}</div>}
+              {r.tambien && <div className="alias-colonia">{r.tambien}</div>}
             </div>
           ))}
         <div className="fila" style={{ marginTop: 6 }}>

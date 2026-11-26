@@ -68,12 +68,25 @@ para brigadistas, registro de material repartido.
 - NOMBRES ALTERNOS (nov 2026): src/lib/nombresAlternos.js lista otros
   nombres con los que se conoce una colonia (ej. Lomas de Morelia = U. Hab.
   Dr. Ignacio Chávez). Solo afectan al buscador (buscarColonias en
-  colonias.js; el resultado trae `tambien` y las tres vistas muestran
-  "también le dicen: …"): no tocan claves, contornos ni la división. Agregar
-  SOLO nombres confirmados: una lista sacada de un chat de IA resultó casi
-  toda falsa (Nueva Chapultepec ≠ Chapultepec Sur, Infonavit La Colina y
-  Lázaro Cárdenas están a 5.6 km, etc. — en el catálogo INEGI son colonias
-  distintas).
+  colonias.js; el resultado trae `tambien` = "también le dicen: X" o "aquí
+  queda: X" y las tres vistas lo muestran): no tocan claves, contornos ni la
+  división. La mayoría sale GENERADA en src/lib/nombresAlternosINE.json por
+  `node scripts/comparar-colonias-ine.mjs` (capa COLONIA de la BGD del INE,
+  833 colonias de Morelia, cruzadas por ÁREA encimada con el catálogo
+  INEGI): nombres entre paréntesis del INE y contornos casi iguales con otro
+  nombre → "también le dicen"; colonias del INE metidas dentro de una zona
+  INEGI más grande → "aquí queda". Descarta cualquier nombre que choque con
+  el de OTRA colonia INEGI (ahí las instituciones trazan distinto el
+  límite). El reporte completo queda en datos-fuente/ine/
+  comparacion-colonias.json. A mano solo nombres confirmados: una lista
+  sacada de un chat de IA resultó casi toda falsa (Nueva Chapultepec ≠
+  Chapultepec Sur, Infonavit La Colina y Lázaro Cárdenas están a 5.6 km —
+  en el catálogo INEGI son colonias distintas).
+- ARCHIVOS FUENTE: las descargas pesadas (BGD del INE `16 MICHOACAN DE
+  OCAMPO.7z`, etc.) viven en `datos-fuente/` (en .gitignore). NUNCA en
+  carpetas temporales: el .7z se perdió una vez así y hubo que volver a
+  bajarlo. Los scripts que lo usan (build-distritos, build-secciones,
+  comparar-colonias-ine) reciben esa ruta.
 - OVERPASS (nov 2026): overpass-api.de daba 502 y kumi/private.coffee no
   respondían; se agregó el espejo de VK (maps.mail.ru), que tarda 17-40 s por
   colonia, por eso ESPERA_MS = 45 s. El caché de calles en la nube solo

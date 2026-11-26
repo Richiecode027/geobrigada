@@ -1414,7 +1414,7 @@ export default function Bardas() {
                     onClick={() => elegirResultadoColonia(r)}
                   >
                     <strong>{r.n}</strong> · {r.t}
-                    {r.tambien && <div className="alias-colonia">también le dicen: {r.tambien}</div>}
+                    {r.tambien && <div className="alias-colonia">{r.tambien}</div>}
                   </div>
                 ))}
               </div>

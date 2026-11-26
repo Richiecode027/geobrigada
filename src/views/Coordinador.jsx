@@ -449,7 +449,7 @@ export default function Coordinador({ contexto }) {
               {r.vt > 0 && <span style={{ color: '#555' }}> · 🏠 {r.vt} viv.</span>}
               {r.p > 0 && <span style={{ color: '#555' }}> · 👥 {r.p.toLocaleString('es-MX')} hab.</span>}
               <span className="badge ok">✓ límites oficiales</span>
-              {r.tambien && <div className="alias-colonia">también le dicen: {r.tambien}</div>}
+              {r.tambien && <div className="alias-colonia">{r.tambien}</div>}
             </div>
           ))}
 
