@@ -4,6 +4,7 @@ import { useMap, marcadorInicio, marcadorEncuentro, marcadorFin } from '../compo
 import AsaPanel from '../components/AsaPanel.jsx';
 import DatosCenso from '../components/DatosCenso.jsx';
 import { useMiUbicacion } from '../components/useMiUbicacion.js';
+import useCapaDistritos from '../components/useCapaDistritos.js';
 import { buscarColonias, ringsPorClave, coloniaEnPunto, coloniaPorClave } from '../lib/colonias.js';
 import { obtenerCallesDePartes } from '../api/overpass.js';
 import { buildUnits } from '../lib/units.js';
@@ -16,6 +17,9 @@ export default function Coordinador({ contexto }) {
   const mapaRef = useRef(null);
   const panelRef = useRef(null);
   const map = useMap(mapaRef);
+  // Límites de los distritos locales del INE, con el mismo botón que en Bardas.
+  const [verDistritos, setVerDistritos] = useState(false);
+  useCapaDistritos(map, verDistritos);
 
   const capaColonia = useRef(null);
   const capaEquipos = useRef(null);
@@ -435,9 +439,12 @@ export default function Coordinador({ contexto }) {
           <button className="boton suave mini" onClick={centrarEnMi}>
             📍 Centrar en mí
           </button>
-          <span style={{ fontSize: '0.8rem', color: '#666' }}>
-            para saber hacia dónde caminar a la colonia
-          </span>
+          <button
+            className={verDistritos ? 'boton primario mini' : 'boton suave mini'}
+            onClick={() => setVerDistritos((v) => !v)}
+          >
+            {verDistritos ? '🗺️ Ocultar distritos' : '🗺️ Ver distritos'}
+          </button>
         </div>
         {gpsError && <div className="error">{gpsError}</div>}
 
