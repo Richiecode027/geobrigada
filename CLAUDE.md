@@ -65,6 +65,15 @@ para brigadistas, registro de material repartido.
   Planear, Brigadista, Historial y Cobertura usan esa misma función: si no,
   la división no coincidiría. Las dibujadas a mano no se pueden juntar (no
   tienen clave). Al dibujar a mano hay "↩ Quitar último punto".
+- NOMBRES ALTERNOS (nov 2026): src/lib/nombresAlternos.js lista otros
+  nombres con los que se conoce una colonia (ej. Lomas de Morelia = U. Hab.
+  Dr. Ignacio Chávez). Solo afectan al buscador (buscarColonias en
+  colonias.js; el resultado trae `tambien` y las tres vistas muestran
+  "también le dicen: …"): no tocan claves, contornos ni la división. Agregar
+  SOLO nombres confirmados: una lista sacada de un chat de IA resultó casi
+  toda falsa (Nueva Chapultepec ≠ Chapultepec Sur, Infonavit La Colina y
+  Lázaro Cárdenas están a 5.6 km, etc. — en el catálogo INEGI son colonias
+  distintas).
 - OVERPASS (nov 2026): overpass-api.de daba 502 y kumi/private.coffee no
   respondían; se agregó el espejo de VK (maps.mail.ru), que tarda 17-40 s por
   colonia, por eso ESPERA_MS = 45 s. El caché de calles en la nube solo

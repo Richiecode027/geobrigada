@@ -9,6 +9,7 @@
 // un número o abrir una sección), no al abrir la app.
 
 import { pointInAnyRing } from './geo.js';
+import { NOMBRES_ALTERNOS } from './nombresAlternos.js';
 
 let datos = null;
 let datosSecciones = null;
@@ -55,8 +56,34 @@ export async function buscarColonias(texto) {
     if (n.startsWith(q)) empiezan.push(c);
     else if (n.includes(q)) contienen.push(c);
   }
+  // Nombres alternos (src/lib/nombresAlternos.js): la colonia oficial sale
+  // con el nombre que se buscó en `tambien`, para que se vea por qué apareció.
+  const qa = sinTitulos(q);
+  if (qa.length >= 3) {
+    for (const { k, alias } of NOMBRES_ALTERNOS) {
+      const a = sinTitulos(normalizar(alias));
+      if (!a.includes(qa)) continue;
+      const c = colonias.find((x) => x.k === k);
+      if (!c) continue;
+      const conAlias = { ...c, tambien: alias };
+      const i = empiezan.indexOf(c);
+      const j = contienen.indexOf(c);
+      if (i >= 0) empiezan[i] = conAlias;
+      else if (j >= 0) contienen[j] = conAlias;
+      else (a.startsWith(qa) ? empiezan : contienen).unshift(conAlias);
+    }
+  }
   return [...empiezan, ...contienen].slice(0, 20);
 }
+
+// Para comparar nombres alternos sin que estorben puntos ni títulos:
+// "Dr. Ignacio Chávez", "doctor ignacio chavez" e "ignacio chavez" son lo mismo.
+const sinTitulos = (s) =>
+  s
+    .replace(/[.,]/g, ' ')
+    .replace(/\b(dr|doctor|u hab|unidad habitacional|fracc|fraccionamiento|col|colonia)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 // Todas las colonias del catálogo ({ k, n, t, cp, v }), ordenadas por nombre.
 export async function todasLasColonias() {

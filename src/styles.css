@@ -169,6 +169,7 @@ textarea { resize: vertical; }
 }
 .resultado:hover { border-color: var(--azul-claro); background: #f4f9fd; }
 .resultado .badge { font-size: 0.75rem; margin-left: 6px; }
+.resultado .alias-colonia { font-size: 0.8rem; color: #666; font-style: italic; margin-top: 2px; }
 .badge.ok { color: var(--ok); }
 .badge.no { color: #c1121f; }
 
