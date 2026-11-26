@@ -324,8 +324,8 @@ para brigadistas, registro de material repartido.
   recién registrada y no dejaba abrirla. Fuera de recorrido, Bardas corre el
   GPS en "modo ligero" (iniciarGPS con segundoPlano:false — sin la
   notificación permanente ni la entrega nativa del APK, que ahí sería abusiva).
-- App abre en la pestaña Bardas (App.jsx), no en Planear: es la actividad del
-  momento. El mapa además se centra solo en la ubicación del equipo en cuanto
+- App abre en la pestaña Planear (App.jsx; nov 2026 — de jul a nov abría en
+  Bardas, que era la actividad del momento). En Bardas, el mapa además se centra solo en la ubicación del equipo en cuanto
   llega la primera lectura de GPS (una vez, no vuelve a moverlo solo después):
   antes arrancaba mostrando todo Morelia y había que buscarse entre cientos
   de pines.
