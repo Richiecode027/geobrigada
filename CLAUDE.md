@@ -62,7 +62,10 @@ para brigadistas, registro de material repartido.
   (ringsPorPartes/ringsPorClave/coloniaPorClave) entiende esas claves, y las
   calles se piden colonia por colonia con obtenerCallesDePartes (overpass.js:
   así salen del caché de cada una; se quitan repetidas por geometría).
-  Planear, Brigadista, Historial y Cobertura usan esa misma función: si no,
+  El recuadro del Censo enseña una tabla con el dato de CADA colonia y el
+  total al final (DatosCenso con `partes`; la densidad total es personas
+  entre área total, no el promedio). Planear, Brigadista, Historial y
+  Cobertura usan esa misma función: si no,
   la división no coincidiría. Las dibujadas a mano no se pueden juntar (no
   tienen clave). Al dibujar a mano hay "↩ Quitar último punto".
 - NOMBRES ALTERNOS (nov 2026): src/lib/nombresAlternos.js lista otros

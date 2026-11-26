@@ -530,7 +530,7 @@ export default function Coordinador({ contexto }) {
                 el mapa sobre ella: se suma a la zona en vez de reemplazarla.
               </div>
             )}
-            <DatosCenso c={colonia.censo} />
+            <DatosCenso c={colonia.censo} partes={colonia.partes} />
             <label className="etiqueta">Actividad</label>
             <div className="fila">
               <input
